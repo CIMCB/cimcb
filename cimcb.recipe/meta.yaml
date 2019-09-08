@@ -1,0 +1,50 @@
+package:
+  name: cimcb
+  version: 2.0.0
+
+source:
+  path: ../
+
+build:
+  noarch: python
+  number: 0
+  script: "{{ PYTHON }} -m pip install . --no-deps -vv"
+
+requirements:
+  build:
+    - setuptools
+    - python >=3.5
+    - bokeh >=1.0.0
+    - keras
+    - numpy >=1.12
+    - pandas
+    - scipy
+    - scikit-learn
+    - statsmodels
+    - python >=3.5
+    - tensorflow
+    - tqdm
+    - xlrd
+    - joblib
+    - nomkl
+
+  run:
+    - python >=3.5
+    - bokeh >=1.0.0
+    - keras
+    - numpy >=1.12
+    - pandas
+    - scipy
+    - scikit-learn
+    - statsmodels
+    - tensorflow
+    - tqdm
+    - xlrd
+    - joblib
+    - nomkl
+
+about:
+  home: https://github.com/CIMCB
+  license: MIT
+  summary: "A package containing the necessary tools for the statistical analysis of untargeted and targeted metabolomics data."
+
