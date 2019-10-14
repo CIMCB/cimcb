@@ -1,6 +1,15 @@
+import math
 import numpy as np
 import pandas as pd
+from copy import deepcopy
+from itertools import combinations
+from sklearn.cross_decomposition import PLSRegression
+from bokeh.plotting import output_notebook, show
+from bokeh.layouts import gridplot
+from bokeh.plotting import ColumnDataSource, figure
 from .BaseModel import BaseModel
+from ..plot import permutation_test
+from ..plot import scatter, distribution, roc_calculate, roc_plot, boxplot
 
 
 class PLS_SIMPLS(BaseModel):
@@ -19,15 +28,23 @@ class PLS_SIMPLS(BaseModel):
 
     evaluate : Evaluate model.
 
-    booteval : Bootstrap evaluation.
+    calc_bootci : Calculate bootstrap intervals for plot_featureimportance.
+
+    plot_featureimportance : Plot coefficient and Variable Importance in Projection (VIP).
+
+    plot_permutation_test : Perform a permutation test and plot.
     """
 
-    parametric = True  # Calculate R2/Q2 for cross_val
+    parametric = True
+    bootlist = ["model.vip_", "model.coef_", "model.x_loadings_", "model.x_scores_", "Y_pred", "model.pctvar_", "model.y_loadings_", "model.pfi_acc_", "model.pfi_r2q2_", "model.pfi_auc_"]  # list of metrics to bootstrap
 
-    def __init__(self, n_components=2):
-        self.model = lambda: None
+    def __init__(self, n_components=2, pfi_metric="r2q2", pfi_nperm=0, pfi_mean=True):
+        self.model = PLSRegression()  # Should change this to an empty model
         self.n_component = n_components
-
+        self.k = n_components
+        self.pfi_metric = pfi_metric
+        self.pfi_nperm = pfi_nperm
+        self.pfi_mean = pfi_mean
         self.__name__ = 'cimcb.model.PLS_SIMPLS'
         self.__params__ = {'n_components': n_components}
 
@@ -52,6 +69,8 @@ class PLS_SIMPLS(BaseModel):
         """
         # Error check
         X, Y = self.input_check(X, Y)
+        self.X = X
+        self.Y = Y
 
         # Calculates and store attributes of PLS SIMPLS
         Xscores, Yscores, Xloadings, Yloadings, Weights, Beta = self.pls_simpls(X, Y, ncomp=self.n_component)
@@ -74,6 +93,17 @@ class PLS_SIMPLS(BaseModel):
         # Calculate and return Y predicted value
         newX = np.insert(X, 0, np.ones(len(X)), axis=1)
         y_pred_train = np.matmul(newX, Beta)
+
+        # Calculate pfi
+        if self.pfi_nperm == 0:
+            self.model.pfi_acc_ = np.zeros((1, len(Y)))
+            self.model.pfi_r2q2_ = np.zeros((1, len(Y)))
+            self.model.pfi_auc_ = np.zeros((1, len(Y)))
+        else:
+            pfi_acc, pfi_r2q2, pfi_auc = self.pfi(nperm=self.pfi_nperm, metric=self.pfi_metric, mean=self.pfi_mean)
+            self.model.pfi_acc_ = pfi_acc
+            self.model.pfi_r2q2_ = pfi_r2q2
+            self.model.pfi_auc_ = pfi_auc
 
         # Storing X, Y, and Y_pred
         self.X = X
@@ -103,6 +133,7 @@ class PLS_SIMPLS(BaseModel):
         # Calculate and return Y predicted value
         newX = np.insert(X, 0, np.ones(len(X)), axis=1)
         y_pred_test = np.matmul(newX, self.model.beta_)
+        self.Y_pred = y_pred_test
         return y_pred_test
 
     @staticmethod

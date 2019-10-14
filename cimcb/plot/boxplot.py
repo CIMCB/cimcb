@@ -5,7 +5,7 @@ from bokeh.plotting import ColumnDataSource, figure
 from bokeh.models import HoverTool
 
 
-def boxplot(X, group, violin=False, title="", xlabel="Group", ylabel="Value", font_size="20pt", label_font_size="13pt", width=500, height=400, color="whitesmoke", color_violin="mediumturquoise", width_boxplot=1, width_violin=1, y_range=None, group_name=None, group_name_sort=None):
+def boxplot(X, group, violin=False, title="", xlabel="Group", ylabel="Value", font_size="20pt", label_font_size="13pt", width=500, height=400, color="whitesmoke", color_violin="mediumturquoise", width_boxplot=1, width_violin=1, y_range=None, group_name=None, group_name_sort=None, legend=True, label=None):
     """Creates a boxplot using Bokeh.
 
     Required Parameters
@@ -16,6 +16,9 @@ def boxplot(X, group, violin=False, title="", xlabel="Group", ylabel="Value", fo
     group : array-like, shape = [n_samples]
         Group label for sample
     """
+
+    if label is None:
+        label = ['0', '1', '0', '1']
 
     if group_name_sort is None:
         group_name_sort = [str(i) for i in list(set(group))]
@@ -71,7 +74,7 @@ def boxplot(X, group, violin=False, title="", xlabel="Group", ylabel="Value", fo
     lower.X = [max([x, y]) for (x, y) in zip(list(qmin.loc[:, "X"]), lower.X)]
 
     # Bokeh data source boxplot
-    source_boxplot = ColumnDataSource(data=dict(group_name=group_name_sort, upper=upper.X, lower=lower.X, q1=q1.X, q2=q2.X, q3=q3.X, color=color))
+    source_boxplot = ColumnDataSource(data=dict(group_name=group_name_sort, upper=upper.X, lower=lower.X, q1=q1.X, q2=q2.X, q3=q3.X, color=color, label=label))
 
     # Bokeh data source outlier
     source_outliers = ColumnDataSource(data=dict(outx=outx, outy=outy, outidx=outidx))
@@ -114,7 +117,7 @@ def boxplot(X, group, violin=False, title="", xlabel="Group", ylabel="Value", fo
     stem2 = fig.segment("group_name", "lower", "group_name", "q1", line_color="black", source=source_boxplot)
 
     # Boxes
-    box1 = fig.vbar("group_name", width_boxplot / 10, "q2", "q3", fill_color="color", line_color="black", alpha=0.8, source=source_boxplot)
+    box1 = fig.vbar("group_name", width_boxplot / 10, "q2", "q3", fill_color="color", line_color="black", alpha=0.8, source=source_boxplot, legend="label")
     box2 = fig.vbar("group_name", width_boxplot / 10, "q1", "q2", fill_color="color", line_color="black", alpha=0.8, source=source_boxplot)
 
     # Whiskers (almost-0 height rects)
@@ -129,6 +132,13 @@ def boxplot(X, group, violin=False, title="", xlabel="Group", ylabel="Value", fo
 
     # Hovertool for outliers
     fig.add_tools(HoverTool(renderers=[outliers], tooltips=[("Index", "@outidx"), (ylabel, "@outy")]))
+
+    # Remove legend
+    if legend is True:
+        fig.legend.visible = True
+        fig.legend.location = "top_left"
+    else:
+        fig.legend.visible = False
 
     # Font-sizes
     fig.title.text_font_size = font_size

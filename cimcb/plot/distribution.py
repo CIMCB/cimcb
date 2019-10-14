@@ -3,7 +3,7 @@ from scipy import stats
 from bokeh.plotting import figure
 
 
-def distribution(X, group, kde=True, title="Density Plot", xlabel="x", ylabel="Pr(x)", font_size="20pt", label_font_size="13pt", width=500, height=400, color_hist="green", color_kde="mediumturquoise", padding=0.5, smooth=None):
+def distribution(X, group, kde=True, title="Density Plot", group_label=None, xlabel="x", ylabel="Pr(x)", font_size="20pt", label_font_size="13pt", width=500, height=400, color_hist="green", color_kde="mediumturquoise", padding=0.5, smooth=None, sigmoid=False, legend=False, legend_location="top_right"):
     """Creates a distribution plot using Bokeh.
 
     Required Parameters
@@ -14,6 +14,8 @@ def distribution(X, group, kde=True, title="Density Plot", xlabel="x", ylabel="P
     group : array-like, shape = [n_samples]
         Group label for sample
     """
+    if group_label == None:
+        group_label = ['0', '1']
 
     # Split into groups
     group_unique = np.sort(np.unique(group))
@@ -74,7 +76,6 @@ def distribution(X, group, kde=True, title="Density Plot", xlabel="x", ylabel="P
         x4_pdf_grid = np.insert(x4_pdf_grid, 0, 0)
         x4_pdf_grid = np.insert(x4_pdf_grid, 0, 0)
 
-    # Get range
     max_val_a = max(abs(max(x1_grid)), abs(min(x1_grid)))
     max_val_b = max(abs(max(x2_grid)), abs(min(x2_grid)))
     max_val_final = 0.2 * max(max_val_a, max_val_b)
@@ -93,19 +94,53 @@ def distribution(X, group, kde=True, title="Density Plot", xlabel="x", ylabel="P
         new_x_range = (x_range_min, x_range_max)
         new_y_range = (0, max(max(x1_pdf_grid) * 1.1, max(x2_pdf_grid) * 1.1, max(x3_pdf_grid) * 1.1, max(x4_pdf_grid) * 1.1))
 
+    # If sigmoid set min 0, max 1 # ignore this
+    if sigmoid is 10:
+        x1_idx = np.intersect1d(np.where(x1_grid <= 1)[0], np.where(x1_grid >= 0)[0])
+        x2_idx = np.intersect1d(np.where(x2_grid <= 1)[0], np.where(x2_grid >= 0)[0])
+        x1_grid = x1_grid[x1_idx]
+        x1_pdf_grid = x1_pdf_grid[x1_idx]
+        x1_pdf_grid[0] = 0
+        x1_pdf_grid[1] = 0
+        x1_pdf_grid[-1] = 0
+        x2_grid = x2_grid[x2_idx]
+        x2_pdf_grid = x2_pdf_grid[x2_idx]
+        x2_pdf_grid[0] = 0
+        x2_pdf_grid[1] = 0
+        x2_pdf_grid[-1] = 0
+        if len(group_unique) == 4:
+            x3_idx = np.intersect1d(np.where(x3_grid <= 1)[0], np.where(x3_grid >= 0)[0])
+            x4_idx = np.intersect1d(np.where(x4_grid <= 1)[0], np.where(x4_grid >= 0)[0])
+            x3_grid = x3_grid[x3_idx]
+            x3_pdf_grid = x3_pdf_grid[x3_idx]
+            x3_pdf_grid[0] = 0
+            x3_pdf_grid[1] = 0
+            x3_pdf_grid[-1] = 0
+            x4_grid = x4_grid[x4_idx]
+            x4_pdf_grid = x4_pdf_grid[x4_idx]
+            x3_pdf_grid[0] = 0
+            x4_pdf_grid[1] = 0
+            x3_pdf_grid[-1] = 0
+
     # Figure
     fig = figure(title=title, x_axis_label=xlabel, y_axis_label=ylabel, plot_width=width, plot_height=height, x_range=new_x_range, y_range=new_y_range)
     if kde is True:
         if len(group_unique) == 4:
-            fig.patch(x1_grid, x1_pdf_grid, alpha=0.1, color="red", line_color="grey", line_width=1)
-            fig.patch(x2_grid, x2_pdf_grid, alpha=0.1, color="blue", line_color="grey", line_width=1)
+            fig.patch(x1_grid, x1_pdf_grid, alpha=0.1, color="red", line_color="grey", line_width=1, legend=group_label[0])
+            fig.patch(x2_grid, x2_pdf_grid, alpha=0.1, color="blue", line_color="grey", line_width=1, legend=group_label[1])
             fig.patch(x3_grid, x3_pdf_grid, alpha=0.2, color="red", line_color="grey", line_width=1)
             fig.patch(x4_grid, x4_pdf_grid, alpha=0.2, color="blue", line_color="grey", line_width=1)
         else:
-            fig.patch(x1_grid, x1_pdf_grid, alpha=0.3, color="red", line_color="grey", line_width=1)
-            fig.patch(x2_grid, x2_pdf_grid, alpha=0.3, color="blue", line_color="grey", line_width=1)
+            fig.patch(x1_grid, x1_pdf_grid, alpha=0.3, color="red", line_color="grey", line_width=1, legend=group_label[0])
+            fig.patch(x2_grid, x2_pdf_grid, alpha=0.3, color="blue", line_color="grey", line_width=1, legend=group_label[1])
 
-    # Y-axis should always start at 0
+    # Remove legend
+    if legend is True:
+        fig.legend.visible = True
+        fig.legend.location = legend_location
+    else:
+        fig.legend.visible = False
+        # Y-axis should always start at 0
     fig.y_range.start = 0
 
     # Font-sizes

@@ -8,45 +8,16 @@ from ..utils import YpredCallback
 
 
 class NN_LinearLinear(BaseModel):
-    """2 Layer linear-linear neural network using Keras.
+    """2 Layer linear-linear neural network using Keras"""
 
-    Parameters
-    ----------
-    n_neurons : int, (default 2)
-        Number of neurons in the hidden layer.
-
-    epochs : int, (default 200)
-        Number of iterations in the model training
-
-    learning_rate : float, (default 0.01)
-        The parameter that controls the step-size in updating the weights.
-
-    momentum : float, (default 0.0)
-        Value that alters the learning rate schedule, whereby increasing the learning rate when the error cost gradient continue in the same direction.
-
-    decay: float, (default 0.0)
-        Value that alters the learning rate schedule, whereby decreasing the learning rate after each epoch/iteration.
-
-    loss : string, (default "mean_squared_error")
-        Function used to calculate the error of the model during the model training process known as backpropagation.
-
-    Methods
-    -------
-    train : Fit model to data.
-
-    test : Apply model to test data.
-
-    evaluate : Evaluate model.
-
-    booteval : Bootstrap evaluation.
-    """
-
-    parametric = True  # Calculate R2/Q2 for cross_val
+    parametric = True
+    bootlist = None
 
     def __init__(self, n_neurons=2, epochs=200, learning_rate=0.01, momentum=0.0, decay=0.0, nesterov=False, loss="mean_squared_error", batch_size=None, verbose=0):
         self.n_neurons = n_neurons
         self.verbose = verbose
         self.n_epochs = epochs
+        self.k = n_neurons
         self.batch_size = batch_size
         self.loss = loss
         self.optimizer = SGD(lr=learning_rate, momentum=momentum, decay=decay, nesterov=nesterov)
@@ -73,12 +44,13 @@ class NN_LinearLinear(BaseModel):
         y_pred_train : array-like, shape = [n_samples, 1]
             Predicted y score for samples.
         """
-        self.X = X
-        self.Y = Y
 
         # If batch-size is None:
         if self.batch_size is None:
             self.batch_size = len(X)
+
+        # Ensure array and error check
+        X, Y = self.input_check(X, Y)
 
         self.model = Sequential()
         self.model.add(Dense(self.n_neurons, activation="linear", input_dim=len(X.T)))
@@ -93,6 +65,19 @@ class NN_LinearLinear(BaseModel):
 
         # Fit
         self.model.fit(X, Y, epochs=self.n_epochs, batch_size=self.batch_size, verbose=self.verbose, callbacks=[self.epoch])
+
+        layer1_weight = self.model.layers[0].get_weights()[0]
+        layer1_bias = self.model.layers[0].get_weights()[1]
+        layer2_weight = self.model.layers[1].get_weights()[0]
+        layer2_bias = self.model.layers[1].get_weights()[1]
+
+        # Not sure about the naming scheme (trying to match PLS)
+        self.model.x_loadings_ = layer1_weight
+        self.model.x_scores_ = np.matmul(X, self.model.x_loadings_) + layer1_bias
+        self.model.y_loadings_ = layer2_weight
+        self.model.pctvar_ = np.ones((1, len(self.model.y_loadings_[0])))
+        self.xcols_num = len(X.T)
+        self.model.pctvar_ = sum(abs(self.model.x_scores_) ** 2) / sum(sum(abs(X) ** 2)) * 100
         y_pred_train = self.model.predict(X).flatten()
 
         # Storing X, Y, and Y_pred
@@ -114,5 +99,16 @@ class NN_LinearLinear(BaseModel):
         y_pred_test : array-like, shape = [n_samples, 1]
             Predicted y score for samples.
         """
+
+        layer1_weight = self.model.layers[0].get_weights()[0]
+        layer1_bias = self.model.layers[0].get_weights()[1]
+        layer2_weight = self.model.layers[1].get_weights()[0]
+        layer2_bias = self.model.layers[1].get_weights()[1]
+
+        self.model.y_loadings_ = layer2_weight
+        self.model.y_loadings_ = self.model.y_loadings_.reshape(1, len(self.model.y_loadings_))
+        self.model.x_loadings_ = layer1_weight
+        self.model.x_scores_ = np.matmul(X, self.model.x_loadings_) + layer1_bias
         y_pred_test = self.model.predict(X).flatten()
+        self.model.pctvar_ = sum(abs(self.model.x_scores_) ** 2) / sum(sum(abs(X) ** 2)) * 100
         return y_pred_test

@@ -1,20 +1,378 @@
 import numpy as np
 import pandas as pd
+from bokeh.models import Band, HoverTool
+from tqdm import tqdm
 import timeit
+from copy import deepcopy
+from scipy.stats import norm
 import time
 import multiprocessing
-import scipy
-from copy import deepcopy, copy
-from bokeh.models import Band, HoverTool
-from bokeh.plotting import ColumnDataSource, figure
 from joblib import Parallel, delayed
+from copy import deepcopy, copy
+from bokeh.plotting import ColumnDataSource, figure
+import scipy
 from scipy import interp
 from sklearn import metrics
 from sklearn.metrics import confusion_matrix, roc_auc_score
 from sklearn.utils import resample
-from tqdm import tqdm
 from ..utils import binary_metrics, dict_median
-import cimcb.model
+#import cimcb.model
+
+
+def roc_plot_boot2(ypred_ib, ypred_oob, Y, bootstat, bootidx, bootstat_oob, bootidx_oob, stat, width=320, height=315, label_font_size="10pt", xlabel="1-Specificity", ylabel="Sensitivity", legend=True, parametric=True, bc=True):
+
+    auc_check = roc_auc_score(Y, stat)
+    if auc_check > 0.5:
+        pos = 1
+    else:
+        pos = 0
+    #print(auc_check)
+
+    fpr_linspace = np.linspace(0, 1, 100)
+    fpr = fpr_linspace
+    fpr_linspace_ib = fpr_linspace
+    tpr_boot = []
+    boot_stats = []
+    auc_ib = []
+    for i in range(len(bootidx)):
+        # Resample and get tpr, fpr
+        Yscore_res = bootstat[i]
+        Ytrue = Y[bootidx[i]]
+        fpr_res, tpr_res, threshold_res = metrics.roc_curve(Ytrue, Yscore_res, pos_label=pos, drop_intermediate=False)
+        auc_ib.append(metrics.auc(fpr_res, tpr_res))
+
+        # Drop intermediates when fpr=0
+        tpr0_res = tpr_res[fpr_res == 0][-1]
+        tpr_res = np.concatenate([[tpr0_res], tpr_res[fpr_res > 0]])
+        fpr_res = np.concatenate([[0], fpr_res[fpr_res > 0]])
+
+        # Vertical averaging... use closest fpr_res to fpr, and append the corresponding tpr
+        idx = [np.abs(i - fpr_res).argmin() for i in fpr]
+        tpr_list = tpr_res[idx]
+        tpr_boot.append(tpr_list)
+
+    # Get CI for tpr
+    tprs_ib_low = np.percentile(tpr_boot, 2.5, axis=0)
+    tprs_ib_upp = np.percentile(tpr_boot, 97.5, axis=0)
+    tprs_ib_mid = np.percentile(tpr_boot, 50, axis=0)
+
+    auc_ib_low = np.percentile(auc_ib, 2.5, axis=0)
+    auc_ib_upp = np.percentile(auc_ib, 97.5, axis=0)
+    auc_ib_ci = np.percentile(auc_ib, 97.5, axis=0) - np.percentile(auc_ib, 2.5, axis=0)
+
+    Yscore_res = stat
+    Ytrue = Y
+    fpr_res, tpr_res, threshold_res = metrics.roc_curve(Y, stat, pos_label=pos, drop_intermediate=False)
+    auc_ib_mid = metrics.auc(fpr_res, tpr_res)
+    # Drop intermediates when fpr=0
+    tpr0_res = tpr_res[fpr_res == 0][-1]
+    tpr_res = np.concatenate([[tpr0_res], tpr_res[fpr_res > 0]])
+    fpr_res = np.concatenate([[0], fpr_res[fpr_res > 0]])
+
+    # Vertical averaging... use closest fpr_res to fpr, and append the corresponding tpr
+    idx = [np.abs(i - fpr_res).argmin() for i in fpr]
+    tpr_list = tpr_res[idx]
+    tpr_list = np.array(tpr_list)
+    #tpr_list = np.insert(tpr_list, 0, 0)
+    tprs_train = deepcopy(tpr_list)
+    tprs_diff =   tprs_ib_mid - tprs_train
+
+    # Get CI for tpr
+    tprs_ib_low = np.percentile(tpr_boot, 2.5, axis=0)
+    tprs_ib_upp = np.percentile(tpr_boot, 97.5, axis=0)
+    tprs_ib_mid = np.percentile(tpr_boot, 50, axis=0)
+
+    if parametric is not 'null':
+        tprs_ib_low = tprs_ib_low - tprs_diff
+        tprs_ib_upp_old = deepcopy(tprs_ib_upp)
+        tprs_ib_upp = tprs_ib_upp - tprs_diff
+        tprs_ib_mid = tprs_ib_mid - tprs_diff
+    if parametric is "parametric":
+        low = tprs_ib_mid - tprs_ib_low
+        tprs_ib_upp = tprs_ib_mid + low
+        tprs_ib_upp[tprs_ib_upp > 1] = 1
+    elif parametric is "nonparametric":
+        low = tprs_ib_mid - tprs_ib_low
+        tprs_ib_upp = tprs_ib_mid + low
+        tprs_ib_upp[tprs_ib_upp > 1] = 1
+        tprs_ib_upp[tprs_ib_upp_old >= 1] = 1
+
+        for i in range(len(tprs_ib_upp)):
+            if i > 1:
+                if tprs_ib_upp[i] < tprs_ib_upp[i - 1]:
+                    tprs_ib_upp[i] = tprs_ib_upp[i - 1]
+    elif parametric is 'null':
+        pass
+    elif parametric is 'test':
+        # Lets do a proper bias-correct based on AUC
+        auc_boot = auc_ib
+        auc_stat = auc_ib_mid
+        nboot = len(auc_boot)
+        zalpha = norm.ppf(0.05 / 2)
+        obs = auc_stat  # Observed mean
+        meansum = 0
+        for j in range(len(auc_boot)):
+            if auc_boot[j] >= obs:
+                meansum = meansum + 1
+        prop = meansum / nboot  # Proportion of times boot mean > obs mean
+        z0 = -norm.ppf(prop)
+        # new alpha
+        pct1 = 100 * norm.cdf((2 * z0 + zalpha))
+        pct2 = 100 * norm.cdf((2 * z0 - zalpha))
+        print("Testing... ({:.2f},{:.2f})".format(pct1, pct2))
+        tprs_ib_low = np.percentile(tpr_boot, pct1, axis=0)
+        tprs_ib_upp = np.percentile(tpr_boot, pct2, axis=0)
+    elif parametric is 'test2':
+
+        fpr_new, stat, _ = metrics.roc_curve(Y, stat, pos_label=pos, drop_intermediate=True)
+        idx_new = []
+        for j in fpr_new:
+            x = min(range(len(fpr_linspace)), key=lambda i: abs(fpr_linspace[i]-j))
+            idx_new.append(x)
+
+        fpr_linspace_ib = fpr_new
+        bootstat = []
+        for i in tpr_boot:
+            bootstat.append(i[idx_new])
+        bootstat = np.array(bootstat)
+        bootstat = bootstat.T
+        nboot = len(bootstat)
+        zalpha = norm.ppf(0.05 / 2)
+        obs = stat  # Observed mean
+        meansum = np.zeros((1, len(obs))).flatten()
+        for i in range(len(obs)):
+            for j in range(len(bootstat)):
+                if bootstat[j][i] >= obs[i]:
+                    meansum[i] = meansum[i] + 1
+        prop = meansum / nboot  # Proportion of times boot mean > obs mean
+        z0 = -norm.ppf(prop)
+
+        # new alpha
+        pct1 = 100 * norm.cdf((2 * z0 + zalpha))
+        pct2 = 100 * norm.cdf((2 * z0 - zalpha))
+        pct3 = 100 * norm.cdf((2 * z0))
+        boot_ci = []
+        for i in range(len(pct1)):
+            bootstat_i = [item[i] for item in bootstat]
+            append_low = np.percentile(bootstat_i, pct1[i])
+            append_mid = np.percentile(bootstat_i, pct3[i])
+            append_upp = np.percentile(bootstat_i, pct2[i])
+            boot_ci.append([append_low, append_upp, append_mid])
+        boot_ci = np.array(boot_ci)
+        tprs_ib_low = boot_ci[:,0]
+        tprs_ib_upp = boot_ci[:,1]
+        tprs_ib_mid = stat
+
+    else:
+        raise ValueError("bc must be 'parametric', 'nonparametric', or 'null'.")
+
+
+    # Add the starting 0
+    tprs_ib_low = np.insert(tprs_ib_low, 0, 0)
+    tprs_ib_upp = np.insert(tprs_ib_upp, 0, 0)
+    tprs_ib_mid = np.insert(tprs_ib_mid, 0, 0)
+
+    auc_ib_ci_hover = [auc_ib_ci] * len(tprs_ib_low)
+    auc_ib_med_hover = [auc_ib_mid] * len(tprs_ib_low)
+
+
+    tpr_boot = []
+    boot_stats = []
+    auc_oob = []
+    for i in range(len(bootidx_oob)):
+        # Resample and get tpr, fpr
+        Yscore_res = bootstat_oob[i]
+        Ytrue = Y[bootidx_oob[i]]
+        fpr_res, tpr_res, threshold_res = metrics.roc_curve(Ytrue, Yscore_res, pos_label=pos, drop_intermediate=False)
+        auc_oob.append(metrics.auc(fpr_res, tpr_res))
+
+        # Drop intermediates when fpr=0
+        tpr0_res = tpr_res[fpr_res == 0][-1]
+        tpr_res = np.concatenate([[tpr0_res], tpr_res[fpr_res > 0]])
+        fpr_res = np.concatenate([[0], fpr_res[fpr_res > 0]])
+
+        # Vertical averaging... use closest fpr_res to fpr, and append the corresponding tpr
+        idx = [np.abs(i - fpr_res).argmin() for i in fpr]
+        tpr_list = tpr_res[idx]
+        tpr_boot.append(tpr_list)
+
+    # Get CI for tpr
+    tprs_oob_low= np.percentile(tpr_boot, 2.5, axis=0)
+    tprs_oob_upp = np.percentile(tpr_boot, 97.5, axis=0)
+    tprs_oob_mid = np.percentile(tpr_boot, 50, axis=0)
+
+    # Add the starting 0
+    tprs_oob_low = np.insert(tprs_oob_low, 0, 0)
+    tprs_oob_upp = np.insert(tprs_oob_upp, 0, 0)
+    tprs_oob_mid = np.insert(tprs_oob_mid, 0, 0)
+
+    fpr_linspace = np.insert(fpr_linspace, 0, 0)
+    fpr_linspace_ib = np.insert(fpr_linspace_ib, 0, 0)
+
+    # Get CI for cv
+    auc_oob_lowci = np.percentile(auc_oob, 2.5, axis=0)
+    auc_oob_uppci = np.percentile(auc_oob, 97.5, axis=0)
+    auc_oob_medci = np.percentile(auc_oob, 50, axis=0)
+    auc_oob_ci = (auc_oob_uppci - auc_oob_lowci) / 2
+    auc_oob_ci_hover = [auc_oob_ci] * len(tprs_oob_upp)
+    auc_oob_med_hover = [auc_oob_medci] * len(tprs_oob_upp)
+
+    auc_ib_median = metrics.auc(fpr_linspace_ib, tprs_ib_mid)
+    auc_oob_median = metrics.auc(fpr_linspace, tprs_oob_mid)
+    roc_title = "AUC: {} ({})".format(np.round(auc_ib_median, 2), np.round(auc_oob_median, 2))
+
+    # specificity and ci-interval for HoverTool
+    spec = 1 - fpr_linspace
+    ci = (tprs_ib_upp - tprs_ib_low) / 2
+
+    data = {"x": fpr_linspace_ib, "y": tprs_ib_mid, "lowci": tprs_ib_low, "uppci": tprs_ib_upp, "spec": spec, "ci": ci, "auc_ib_ci_hover":auc_ib_ci_hover, "auc_ib_med_hover":auc_ib_med_hover}
+
+    source = ColumnDataSource(data=data)
+
+    fig = figure(title="", plot_width=width, plot_height=height, x_axis_label=xlabel, y_axis_label=ylabel, x_range=(-0.06, 1.06), y_range=(-0.06, 1.06))
+    fig.line([0, 1], [0, 1], color="black", line_dash="dashed", line_width=4, legend="Equal Distribution Line")
+    figline = fig.line("x", "y", color="green", line_width=4, alpha=0.6, legend="IB (AUC = {:.2f} +/- {:.2f})".format(auc_ib_mid,auc_ib_ci), source=source)
+    fig.add_tools(HoverTool(renderers=[figline], tooltips=[("Specificity", "@spec{1.111}"), ("Sensitivity", "@y{1.111} (+/- @ci{1.111})"), ("AUC", "@auc_ib_med_hover{1.111} (+/- @auc_ib_ci_hover{1.111})")]))
+
+    # Figure: add 95CI band
+    figband = Band(base="x", lower="lowci", upper="uppci", level="underlay", fill_alpha=0.1, line_width=1, line_color="black", fill_color="green", source=source)
+    fig.add_layout(figband)
+
+        # specificity and ci-interval for HoverTool
+    spec2 = 1 - fpr_linspace
+    ci2 = (tprs_oob_upp - tprs_oob_low) / 2
+
+    data2 = {"x": fpr_linspace, "y": tprs_oob_mid, "lowci": tprs_oob_low, "uppci": tprs_oob_upp, "spec": spec2, "ci": ci2, "auc_oob_ci_hover":auc_oob_ci_hover, "auc_oob_med_hover":auc_oob_med_hover}
+
+    source2 = ColumnDataSource(data=data2)
+
+    figline2 = fig.line("x", "y", color="orange", line_width=4, alpha=0.6, legend="OOB (AUC = {:.2f} +/- {:.2f})".format(auc_oob_medci, auc_oob_ci), source=source2)
+    fig.add_tools(HoverTool(renderers=[figline2], tooltips=[("Specificity", "@spec{1.111}"), ("Sensitivity", "@y{1.111} (+/- @ci{1.111})"), ("AUC", "@auc_oob_med_hover{1.111} (+/- @auc_oob_ci_hover{1.111})")]))
+
+    # Figure: add 95CI band
+    figband = Band(base="x", lower="lowci", upper="uppci", level="underlay", fill_alpha=0.1, line_width=1, line_color="black", fill_color="orange", source=source2)
+    fig.add_layout(figband)
+
+
+    fig.legend.location = "bottom_right"
+    fig.legend.label_text_font_size = "10pt"
+    if legend is False:
+        fig.legend.visible = False
+
+    return fig
+
+
+def roc_plot_cv(Y_predfull, Y_predcv, Ytrue, width=450, height=350, xlabel="1-Specificity", ylabel="Sensitivity", legend=True, label_font_size="13pt", show_title=True, title_font_size="13pt", title=""):
+
+    auc_check = roc_auc_score(Ytrue, Y_predfull)
+    if auc_check > 0.5:
+        pos = 1
+    else:
+        pos = 0
+
+    fprf, tprf, thresholdf = metrics.roc_curve(Ytrue, Y_predfull, pos_label=pos, drop_intermediate=False)
+    specf = 1 - fprf
+    auc_full = metrics.auc(fprf, tprf)
+    auc_full_hover = [auc_full] * len(tprf)
+
+    # Figure
+    data = {"x": fprf, "y": tprf, "spec": specf, "aucfull": auc_full_hover}
+
+    source = ColumnDataSource(data=data)
+    fig = figure(title=title, plot_width=width, plot_height=height, x_axis_label=xlabel, y_axis_label=ylabel, x_range=(-0.06, 1.06), y_range=(-0.06, 1.06))
+
+    # Figure: add line
+    fig.line([0, 1], [0, 1], color="black", line_dash="dashed", line_width=2.5, legend="Equal Distribution Line")
+    figline = fig.line("x", "y", color="green", line_width=3.5, alpha=0.6, legend="FULL (AUC = {:.2f})".format(auc_full), source=source)
+    fig.add_tools(HoverTool(renderers=[figline], tooltips=[("Specificity", "@spec{1.111}"), ("Sensitivity", "@y{1.111}"), ("AUC", "@aucfull")]))
+
+    # ADD CV
+    # bootstrap using vertical averaging
+
+    # fpr, tpr with drop_intermediates for fpr = 0 (useful for plot... since we plot specificity on x-axis, we don't need intermediates when fpr=0)
+    fpr = fprf
+    tpr = tprf
+    tpr0 = tpr[fpr == 0][-1]
+    tpr = np.concatenate([[tpr0], tpr[fpr > 0]])
+    fpr = np.concatenate([[0], fpr[fpr > 0]])
+    tpr_boot = []
+    boot_stats = []
+    auc_cv = []
+    for i in range(len(Y_predcv)):
+        # Resample and get tpr, fpr
+        Yscore_res = Y_predcv[i]
+        fpr_res, tpr_res, threshold_res = metrics.roc_curve(Ytrue, Yscore_res, pos_label=pos, drop_intermediate=False)
+        auc_cv.append(metrics.auc(fpr_res, tpr_res))
+        # Drop intermediates when fpr=0
+        tpr0_res = tpr_res[fpr_res == 0][-1]
+        tpr_res = np.concatenate([[tpr0_res], tpr_res[fpr_res > 0]])
+        fpr_res = np.concatenate([[0], fpr_res[fpr_res > 0]])
+
+        # Vertical averaging... use closest fpr_res to fpr, and append the corresponding tpr
+        idx = [np.abs(i - fpr_res).argmin() for i in fpr]
+        tpr_list = tpr_res[idx]
+        tpr_boot.append(tpr_list)
+
+    # Get CI for tpr
+    tpr_lowci = np.percentile(tpr_boot, 2.5, axis=0)
+    tpr_uppci = np.percentile(tpr_boot, 97.5, axis=0)
+    tpr_medci = np.percentile(tpr_boot, 50, axis=0)
+
+
+
+    # Add the starting 0
+    tpr = np.insert(tpr, 0, 0)
+    fpr = np.insert(fpr, 0, 0)
+    tpr_lowci = np.insert(tpr_lowci, 0, 0)
+    tpr_uppci = np.insert(tpr_uppci, 0, 0)
+    tpr_medci = np.insert(tpr_medci, 0, 0)
+
+    # Get CI for cv
+    auc_lowci = np.percentile(auc_cv, 2.5, axis=0)
+    auc_uppci = np.percentile(auc_cv, 97.5, axis=0)
+    auc_medci = np.percentile(auc_cv, 50, axis=0)
+    auc_ci = (auc_uppci - auc_lowci) / 2
+    auc_ci_hover = [auc_ci] * len(tpr_medci)
+    auc_med_hover = [auc_medci] * len(tpr_medci)
+
+    # Concatenate tpr_ci
+    tpr_ci = np.array([tpr_lowci, tpr_uppci, tpr_medci])
+    # specificity and ci-interval for HoverTool
+    spec2 = 1 - fpr
+    ci2 = (tpr_uppci - tpr_lowci) / 2
+
+    data2 = {"x": fpr, "y": tpr_medci, "lowci": tpr_lowci, "uppci": tpr_uppci, "spec": spec2, "ci": ci2, "auc_ci_hover":auc_ci_hover, "auc_med_hover":auc_med_hover}
+
+    source2 = ColumnDataSource(data=data2)
+
+    figline = fig.line("x", "y", color="orange", line_width=3.5, alpha=0.6, legend="CV (AUC = {:.2f} +/- {:.2f})".format(auc_medci, auc_ci,), source=source2)
+    fig.add_tools(HoverTool(renderers=[figline], tooltips=[("Specificity", "@spec{1.111}"), ("Sensitivity", "@y{1.111} (+/- @ci{1.111})"), ("AUC", "@auc_med_hover{1.111} (+/- @auc_ci_hover{1.111})")]))
+
+    # Figure: add 95CI band
+    figband = Band(base="x", lower="lowci", upper="uppci", level="underlay", fill_alpha=0.1, line_width=1, line_color="black", fill_color="orange", source=source2)
+    fig.add_layout(figband)
+
+    # Change font size
+    if show_title is True:
+        fig.title.text = "AUC FULL ({}) & AUC CV ({} +/- {})".format(np.round(auc_full,2), np.round(auc_medci,2), np.round(auc_ci,2))
+        fig.title.text_font_size = title_font_size
+    fig.xaxis.axis_label_text_font_size = label_font_size
+    fig.yaxis.axis_label_text_font_size = label_font_size
+
+    # Extra padding
+    fig.min_border_left = 20
+    fig.min_border_right = 20
+    fig.min_border_top = 20
+    fig.min_border_bottom = 20
+
+    # Edit legend
+    fig.legend.location = "bottom_right"
+    # fig.legend.label_text_font_size = "1pt"
+    # fig.legend.label_text_font = "1pt"
+    if legend is False:
+        fig.legend.visible = False
+
+    return fig
 
 
 def roc_plot(fpr, tpr, tpr_ci, median=False, width=450, height=350, xlabel="1-Specificity", ylabel="Sensitivity", legend=True, label_font_size="13pt", title="", errorbar=False, roc2=False, fpr2=None, tpr2=None, tpr_ci2=None):
@@ -66,7 +424,7 @@ def roc_plot(fpr, tpr, tpr_ci, median=False, width=450, height=350, xlabel="1-Sp
 
     # Figure: add line
     if roc2 is False:
-        fig.line([0, 1], [0, 1], color="black", line_dash="dashed", line_width=2.5, legend="Equal distribution line")
+        fig.line([0, 1], [0, 1], color="black", line_dash="dashed", line_width=2.5, legend="Equal Distribution Line")
         figline = fig.line("x", "y", color="green", line_width=3.5, alpha=0.6, legend="ROC Curve (Train)", source=source)
         fig.add_tools(HoverTool(renderers=[figline], tooltips=[("Specificity", "@spec{1.111}"), ("Sensitivity", "@y{1.111} (+/- @ci{1.111})")]))
 
@@ -76,7 +434,7 @@ def roc_plot(fpr, tpr, tpr_ci, median=False, width=450, height=350, xlabel="1-Sp
 
     if roc2 is True:
 
-        fig.line([0, 1], [0, 1], color="black", line_dash="dashed", line_width=2.5, legend="Equal distribution line")
+        fig.line([0, 1], [0, 1], color="black", line_dash="dashed", line_width=2.5, legend="Equal Distribution Line")
         figline = fig.line("x", "y", color="green", line_width=3.5, alpha=0.6, legend="ROC Curve (Model)", source=source)
         fig.add_tools(HoverTool(renderers=[figline], tooltips=[("Specificity", "@spec{1.111}"), ("Sensitivity", "@y{1.111} (+/- @ci{1.111})")]))
 
@@ -276,7 +634,7 @@ def roc_plot_boot(fpr_ib, tpr_ib_ci, fpr_oob, tpr_oob_ci, width=450, height=350,
     fig = figure(title=title, plot_width=width, plot_height=height, x_axis_label=xlabel, y_axis_label=ylabel, x_range=(-0.06, 1.06), y_range=(-0.06, 1.06))
 
     # Figure: add line
-    fig.line([0, 1], [0, 1], color="black", line_dash="dashed", line_width=2.5, legend="Equal distribution line")
+    fig.line([0, 1], [0, 1], color="black", line_dash="dashed", line_width=2.5, legend="Equal Distribution Line")
     figline = fig.line("x", "y", color="green", line_width=3.5, alpha=0.6, legend="ROC Curve (IB)", source=source)
     fig.add_tools(HoverTool(renderers=[figline], tooltips=[("Specificity", "@spec{1.111}"), ("Sensitivity", "@y{1.111} (+/- @ci{1.111})")]))
 

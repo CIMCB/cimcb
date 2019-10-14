@@ -2,7 +2,6 @@ import numpy as np
 
 
 def dict_median(dict_list):
-    """Calculate median for all keys in dictionary."""
     median_dict = {}
     for key in dict_list[0].keys():
         value = []
@@ -12,5 +11,5 @@ def dict_median(dict_list):
         if np.isnan(value_arr).any() == True:
             median_dict[key] = np.nan
         else:
-            median_dict[key] = np.median(value)
+            median_dict[key] = np.median(value,)
     return median_dict

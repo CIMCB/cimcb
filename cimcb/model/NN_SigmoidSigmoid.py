@@ -3,61 +3,47 @@ from keras.callbacks import Callback
 from keras.optimizers import SGD
 from keras.models import Sequential
 from keras.layers import Dense
+import tensorflow as tf
+from scipy.stats import logistic
+from copy import deepcopy, copy
+from sklearn.metrics import r2_score, explained_variance_score
+from keras import backend as K
+from bokeh.plotting import output_notebook, show
+from keras.constraints import max_norm, non_neg, min_max_norm, unit_norm
+from ..plot import permutation_test
 from .BaseModel import BaseModel
 from ..utils import YpredCallback
 
 
 class NN_SigmoidSigmoid(BaseModel):
-    """2 Layer sigmoid-sigmoid neural network using Keras.
+    """2 Layer linear-logistic neural network using Keras"""
 
-    Parameters
-    ----------
-    n_neurons : int, (default 2)
-        Number of neurons in the hidden layer.
+    parametric = True
+    bootlist = ["model.vip_", "model.coef_", "model.x_loadings_", "model.x_scores_", "Y_pred", "model.pctvar_", "model.y_loadings_", "model.pfi_acc_", "model.pfi_r2q2_", "model.pfi_auc_"]  # list of metrics to bootstrap
 
-    epochs : int, (default 200)
-        Number of iterations in the model training
-
-    learning_rate : float, (default 0.01)
-        The parameter that controls the step-size in updating the weights.
-
-    momentum : float, (default 0.0)
-        Value that alters the learning rate schedule, whereby increasing the learning rate when the error cost gradient continue in the same direction.
-
-    decay: float, (default 0.0)
-        Value that alters the learning rate schedule, whereby decreasing the learning rate after each epoch/iteration.
-
-    loss : string, (default "binary_crossentropy")
-        Function used to calculate the error of the model during the model training process known as backpropagation.
-
-    Methods
-    -------
-    train : Fit model to data.
-
-    test : Apply model to test data.
-
-    evaluate : Evaluate model.
-
-    booteval : Bootstrap evaluation.
-    """
-
-    parametric = True  # Calculate R2/Q2 for cross_val
-
-    def __init__(self, n_neurons=2, epochs=200, learning_rate=0.01, momentum=0.0, decay=0.0, nesterov=False, loss="binary_crossentropy", batch_size=None, verbose=0):
+    def __init__(self, n_neurons=2, epochs=200, learning_rate=0.01, momentum=0.0, decay=0.0, nesterov=False, loss="binary_crossentropy", batch_size=None, verbose=0, pfi_metric="r2q2", pfi_nperm=0, pfi_mean=True):
         self.n_neurons = n_neurons
         self.verbose = verbose
         self.n_epochs = epochs
+        self.k = n_neurons
         self.batch_size = batch_size
         self.loss = loss
+        self.decay = decay
+        self.nesterov = nesterov
+        self.momentum = momentum
+        self.learning_rate = learning_rate
+        self.pfi_metric = pfi_metric
+        self.pfi_nperm = pfi_nperm
+        self.pfi_mean = pfi_mean
         self.optimizer = SGD(lr=learning_rate, momentum=momentum, decay=decay, nesterov=nesterov)
-
+        self.compiled = False
         self.__name__ = 'cimcb.model.NN_SigmoidSigmoid'
         self.__params__ = {'n_neurons': n_neurons, 'epochs': epochs, 'learning_rate': learning_rate, 'momentum': momentum, 'decay': decay, 'nesterov': nesterov, 'loss': loss, 'batch_size': batch_size, 'verbose': verbose}
 
     def set_params(self, params):
         self.__init__(**params)
 
-    def train(self, X, Y, epoch_ypred=False, epoch_xtest=None):
+    def train(self, X, Y, epoch_ypred=False, epoch_xtest=None, w1=False, w2=False):
         """ Fit the neural network model, save additional stats (as attributes) and return Y predicted values.
 
         Parameters
@@ -73,17 +59,17 @@ class NN_SigmoidSigmoid(BaseModel):
         y_pred_train : array-like, shape = [n_samples, 1]
             Predicted y score for samples.
         """
-        self.X = X
-        self.Y = Y
+
+        # # If using Keras, set tf to 1 core
+        # config = K.tf.ConfigProto(intra_op_parallelism_threads=8, inter_op_parallelism_threads=8, allow_soft_placement=True)
+        # session = tf.Session(config=config)
+        # K.set_session(session)
 
         # If batch-size is None:
         if self.batch_size is None:
             self.batch_size = len(X)
-
-        self.model = Sequential()
-        self.model.add(Dense(self.n_neurons, activation="sigmoid", input_dim=len(X.T)))
-        self.model.add(Dense(1, activation="sigmoid"))
-        self.model.compile(optimizer=self.optimizer, loss=self.loss, metrics=["accuracy"])
+        self.X = X
+        self.Y = Y
 
         # If epoch_ypred is True, calculate ypred for each epoch
         if epoch_ypred is True:
@@ -91,11 +77,76 @@ class NN_SigmoidSigmoid(BaseModel):
         else:
             self.epoch = Callback()
 
+        if self.compiled == False:
+            self.model = Sequential()
+            self.model.add(Dense(self.n_neurons, activation="sigmoid", input_dim=len(X.T)))
+            self.model.add(Dense(1, activation="sigmoid"))
+            self.model.compile(optimizer=self.optimizer, loss=self.loss, metrics=["accuracy"])
+            self.model.w1 = self.model.layers[0].get_weights()
+            self.model.w2 = self.model.layers[1].get_weights()
+            self.compiled == True
+        else:
+            self.model.layers[0].set_weights(self.model.w1)
+            self.model.layers[1].set_weights(self.model.w2)
+        #print("Before: {}".format(self.model.layers[1].get_weights()[0].flatten()))
+        # print("Before: {}".format(self.model.layers[1].get_weights()[0]))
+
+        if w1 != False:
+            self.model.layers[0].set_weights(w1)
+            self.model.w1 = w1
+        if w2 != False:
+            self.model.layers[1].set_weights(w2)
+            self.model.w2 = w2
+
         # Fit
-        self.model.fit(X, Y, epochs=self.n_epochs, batch_size=self.batch_size, verbose=self.verbose, callbacks=[self.epoch])
+        self.model.fit(X, Y, epochs=self.n_epochs, batch_size=self.batch_size, verbose=self.verbose)
+
+        self.model.pctvar_ = pctvar_calc(self.model, X, Y)
+        #print("After: {} .... {}".format(self.model.layers[1].get_weights()[0].flatten(), self.model.pctvar_))
+
+        layer1_weight = self.model.layers[0].get_weights()[0]
+        layer1_bias = self.model.layers[0].get_weights()[1]
+        layer2_weight = self.model.layers[1].get_weights()[0]
+        layer2_bias = self.model.layers[1].get_weights()[1]
+
+        # Coef vip
+        self.model.vip_ = garson(layer1_weight, layer2_weight.flatten())
+        self.model.coef_ = connectionweight(layer1_weight, layer2_weight.flatten())
+
+        # Not sure about the naming scheme (trying to match PLS)
+        self.model.x_loadings_ = layer1_weight
+        self.model.x_scores_ = np.matmul(X, self.model.x_loadings_) + layer1_bias
+        self.model.x_scores_alt = self.model.x_scores_
+        self.model.y_loadings_ = layer2_weight
+        self.model.y_scores = np.matmul(self.model.x_scores_alt, self.model.y_loadings_) + layer2_bias
         y_pred_train = self.model.predict(X).flatten()
 
-        # Storing X, Y, and Y_pred
+        # Sort by pctvar
+        # if self.compiled == False:
+        #     if w1 == False:
+        #         order = np.argsort(self.model.pctvar_)[::-1]
+        #         self.model.x_scores_ = self.model.x_scores_[:, order]
+        #         self.model.x_loadings_ = self.model.x_loadings_[:, order]
+        #         self.model.y_loadings_ = self.model.y_loadings_[order]
+        #         self.model.y_loadings_ = self.model.y_loadings_.T
+        #         self.model.pctvar_ = self.model.pctvar_[order]
+        #         self.model.w1[0] = self.model.w1[0][:, order]
+        #         self.model.w2[0] = self.model.w2[0][order]
+        #     self.compiled = True
+
+        self.model.y_loadings_ = layer2_weight.T
+
+        # Calculate pfi
+        if self.pfi_nperm == 0:
+            self.model.pfi_acc_ = np.zeros((1, len(Y)))
+            self.model.pfi_r2q2_ = np.zeros((1, len(Y)))
+            self.model.pfi_auc_ = np.zeros((1, len(Y)))
+        else:
+            pfi_acc, pfi_r2q2, pfi_auc = self.pfi(nperm=self.pfi_nperm, metric=self.pfi_metric, mean=self.pfi_mean)
+            self.model.pfi_acc_ = pfi_acc
+            self.model.pfi_r2q2_ = pfi_r2q2
+            self.model.pfi_auc_ = pfi_auc
+
         self.Y_pred = y_pred_train
         self.X = X
         self.Y = Y
@@ -114,5 +165,84 @@ class NN_SigmoidSigmoid(BaseModel):
         y_pred_test : array-like, shape = [n_samples, 1]
             Predicted y score for samples.
         """
+
+        layer1_weight = self.model.layers[0].get_weights()[0]
+        layer1_bias = self.model.layers[0].get_weights()[1]
+        layer2_weight = self.model.layers[1].get_weights()[0]
+        layer2_bias = self.model.layers[1].get_weights()[1]
+
+        self.model.x_scores_ = np.matmul(X, layer1_weight) + layer1_bias
+        self.model.x_scores_alt = self.model.x_scores_
+        #self.model.y_scores = np.matmul(self.model.x_scores_alt, self.model.y_loadings_) + layer2_bias
         y_pred_test = self.model.predict(X).flatten()
+        self.Y_pred = y_pred_test
+
         return y_pred_test
+
+
+def pctvar_calc(model, X, Y):
+    x1 = X
+    w1 = model.layers[0].get_weights()[0]
+    b1 = model.layers[0].get_weights()[1]
+    w2 = model.layers[1].get_weights()[0]
+    b2 = model.layers[1].get_weights()[1]
+
+    x2 = logistic.cdf(np.matmul(x1, w1) + b1)
+
+    pctvar = []
+    if len(w2) == 1:
+        y = logistic.cdf(np.matmul(x2, w2) + b2)
+        #r2_i = r2_score(Y, y) * 100
+        r2_i = explained_variance_score(Y, y) * 100
+        pctvar.append(r2_i)
+    else:
+        for i in range(len(w2)):
+            w2_i = deepcopy(w2)
+            w2_i[~i] = 0
+            y = logistic.cdf(np.matmul(x2, w2_i) + b2)
+            #r2_i = r2_score(Y, y) * 100
+            r2_i = explained_variance_score(Y, y) * 100
+            pctvar.append(r2_i)
+
+    pct = np.array(pctvar)
+    # convert to reltive explained variance
+    pct = pct / np.sum(pct) * 100
+    return pct
+
+
+def garson(A, B):
+    """
+    Computes Garson's algorithm
+    A = matrix of weights of input-hidden layer (rows=input & cols=hidden)
+    B = vector of weights of hidden-output layer
+    """
+    B = np.diag(B)
+
+    # connection weight through the different hidden node
+    cw = np.dot(A, B)
+
+    # weight through node (axis=0 is column; sum per input feature)
+    cw_h = abs(cw).sum(axis=0)
+
+    # relative contribution of input neuron to outgoing signal of each hidden neuron
+    # sum to find relative contribution of input neuron
+    rc = np.divide(abs(cw), abs(cw_h))
+    rc = rc.sum(axis=1)
+
+    # normalize to 100% for relative importance
+    ri = rc / rc.sum()
+    return(ri)
+
+
+def connectionweight(A, B):
+    """
+    Computes Garson's algorithm
+    A = matrix of weights of input-hidden layer (rows=input & cols=hidden)
+    B = vector of weights of hidden-output layer
+    """
+    #B = np.diag(B)
+
+    # connection weight through the different hidden node
+    cw = np.dot(A, B)
+
+    return cw

@@ -3,7 +3,6 @@ from sklearn import preprocessing
 
 
 def color_scale(x, method="tanh", beta=None):
-    """Color scaling methods for heatmaps in the cross_val method."""
 
     # Initially scale between 0 and 1
     scaler = preprocessing.MinMaxScaler(feature_range=(0.1, 1))

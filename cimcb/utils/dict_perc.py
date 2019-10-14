@@ -2,7 +2,6 @@ import numpy as np
 
 
 def dict_perc(dict_list, ci=95):
-    """Calculate confidence intervals (percentile) for all keys in dictionary."""
     perc_dict = {}
     for key in dict_list[0].keys():
         value = []

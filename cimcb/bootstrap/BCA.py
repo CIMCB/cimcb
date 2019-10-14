@@ -57,7 +57,7 @@ class BCA(BaseBootstrap):
             self.jackidx.append(jack_delete)
 
     def calc_jackstat(self):
-        """Trains and tests model, then stores selected attributes (from self.bootlist) for each resampled (using jackknife technique) dataset."""
+        """Trains and test model, then stores selected attributes (from self.bootlist) for each resampled (using jackknife technique) dataset."""
         self.jackstat = {}
         for i in self.bootlist:
             self.jackstat[i] = []
@@ -124,7 +124,7 @@ class BCA(BaseBootstrap):
                     append_low = np.percentile(bootstat_i, pct1[i])
                     append_upp = np.percentile(bootstat_i, pct2[i])
                 except ValueError:
-                    # Use BC if BCA is not possible
+                    # USE BC if BCA is not possible
                     pct1 = 100 * norm.cdf((2 * z0 + zalpha))
                     pct2 = 100 * norm.cdf((2 * z0 - zalpha))
                     append_low = np.percentile(bootstat_i, pct1[i])

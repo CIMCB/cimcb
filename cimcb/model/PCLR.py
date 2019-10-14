@@ -21,10 +21,15 @@ class PCLR(BaseModel):
 
     evaluate : Evaluate model.
 
-    booteval : Bootstrap evaluation.
+    calc_bootci : Calculate bootstrap intervals for plot_featureimportance.
+
+    plot_featureimportance : Plot coefficient and Variable Importance in Projection (VIP).
+
+    plot_permutation_test : Perform a permutation test and plot.
     """
 
-    parametric = True # Calculate R2/Q2 for cross_val
+    parametric = True
+    bootlist = ["model.coef_"]  # list of metrics to bootstrap
 
     def __init__(self, n_components=2):
         self.model = PCA(n_components=n_components)

@@ -6,29 +6,7 @@ from .BaseModel import BaseModel
 
 
 class SVM(BaseModel):
-    """Support vector machine.
-
-    Parameters
-    ----------
-    kernel : string, (default "rbf")
-        Specifies the type of kernel; "linear", ‘poly’, ‘rbf’, ‘sigmoid’ or ‘precomputed’.
-
-    C : float, (default 1.0)
-        The cost parameter that determines how soft or hard (i.e. strict) the hyperplane margin is
-
-    Gamma : float or string, (default "auto")
-        The parameter that (intuitively) sets the influence a single sample has on the model. Default is 1 / n_features.
-
-    Methods
-    -------
-    train : Fit model to data.
-
-    test : Apply model to test data.
-
-    evaluate : Evaluate model.
-
-    booteval : Bootstrap evaluation.
-    """
+    """Support Vector Machine"""
 
     parametric = True
     bootlist = None  # list of metrics to bootstrap

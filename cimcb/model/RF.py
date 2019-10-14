@@ -6,46 +6,14 @@ from .BaseModel import BaseModel
 
 
 class RF(BaseModel):
-    """Random forest.
+    """Random forest"""
 
-    Parameters
-    ----------
-    max_depth : int or None, (default None)
-        Maximum depth allowed for each tree
-
-    min_samples_leaf : int or float, (default 2)
-        Minimum number of samples required at each leaf node after a split in a tree. This value can either be an integer or a fraction of the total number of samples.
-
-    n_estimators : int, (default 100)
-        Number of trees in the forest.
-
-    max_features : int, float, string or None, (default "sqrt”)
-        Number of features considered at each split in a tree.
-
-    criterion: string, (default "gini")
-        Function used to measure the quality of the split in a tree. This is 'gini' for Gini impurity or 'entropy' for information gain
-
-    min_samples_split : int or float, (default 2)
-        Minimum number of samples required for a split in a tree. This value can either be an integer or a fraction of the total number of samples
-
-    max_leaf_nodes : int or None, (default None)
-        Maximum number of leaf nodes in a tree.
-
-    Methods
-    -------
-    train : Fit model to data.
-
-    test : Apply model to test data.
-
-    evaluate : Evaluate model.
-
-    booteval : Bootstrap evaluation.
-    """
-
-    parametric = True  # Calculate R2/Q2 for cross_val
+    parametric = True
+    bootlist = None  # list of metrics to bootstrap
 
     def __init__(self, n_estimators=100, max_features="auto", max_depth=None, criterion="gini", min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=None):
         self.model = RandomForestClassifier(n_estimators=n_estimators, max_features=max_features, max_depth=max_depth, criterion=criterion, min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf, max_leaf_nodes=max_leaf_nodes, n_jobs=n_jobs)
+        self.k = n_estimators
 
         self.__name__ = 'cimcb.model.RF'
         self.__params__ = {'n_estimators': n_estimators, 'max_features': max_features, 'max_depth': max_depth, 'criterion': criterion, 'min_samples_split': min_samples_split, 'min_samples_leaf': min_samples_leaf, 'max_leaf_nodes': max_leaf_nodes, 'n_jobs': n_jobs}
