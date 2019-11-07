@@ -2,9 +2,10 @@ import numpy as np
 from copy import deepcopy
 from bokeh.models import Span, Whisker
 from bokeh.plotting import ColumnDataSource, figure
+from bokeh.models import SingleIntervalTicker, LinearAxis
 
 
-def scatterCI(x, ci=None, label=None, hoverlabel=None, hline=0, sort_abs=False, col_hline=True, col_palette=None, title="Scatter CI Plot", xlabel="Peak", ylabel="Value", width=200, height=300, legend=True, font_size="20pt", label_font_size="13pt", linkrange=None, sort_ci=True, sort_ci_abs=False):
+def scatterCI(x, ci=None, label=None, hoverlabel=None, hline=0, sort_abs=False, col_hline=True, col_palette=None, title="Scatter CI Plot", xlabel="Peak", ylabel="Value", width=200, height=300, legend=True, font_size="20pt", label_font_size="13pt", linkrange=None, sort_ci=True, sort_ci_abs=False, grid_line=False, plot_x=False, x_axis_below=True):
     """Creates a scatterCI plot using Bokeh.
 
     Required Parameters
@@ -186,11 +187,15 @@ def scatterCI(x, ci=None, label=None, hoverlabel=None, hline=0, sort_abs=False, 
         y_range = (min(np.min(ci[:, 0]) - y_range_max, np.min(ci[:, 0]) - y_range_max), max(np.max(ci[:, 1]) + y_range_max, np.max(ci[:, 0]) + y_range_max))
 
     # Base figure
-    fig = figure(title=title, x_axis_label=xlabel, y_axis_label=ylabel, x_range=xrange, y_range=y_range, plot_width=int(len(x) / 10 * width), plot_height=height, tooltips=TOOLTIPS, toolbar_location="left", toolbar_sticky=False)
-    #  x_axis_location="above"
+    if x_axis_below == True:
+        fig = figure(title=title, x_axis_label=xlabel, y_axis_label=ylabel, x_range=xrange, y_range=y_range, plot_width=int(len(x) / 10 * width), plot_height=height, tooltips=TOOLTIPS, toolbar_location="left", toolbar_sticky=False)
+    else:
+        fig = figure(title=title, x_axis_label=xlabel, y_axis_label=ylabel, x_range=xrange, y_range=y_range, plot_width=int(len(x) / 10 * width), plot_height=height, tooltips=TOOLTIPS, toolbar_location="left", toolbar_sticky=False, x_axis_location="above")
 
     # Add circles
     fig.circle("label", "x", size=10, alpha=0.6, color="col", source=source)
+
+    #fig.x(label_copy, plot_x, size=20, alpha=0.6, color="black")
 
     # Add hline
     hline = Span(location=hline, dimension="width", line_color="grey", line_width=2, line_alpha=0.9)
@@ -217,5 +222,14 @@ def scatterCI(x, ci=None, label=None, hoverlabel=None, hline=0, sort_abs=False, 
     fig.min_border_right = 20
     fig.min_border_top = 20
     fig.min_border_bottom = 20
+
+    if grid_line == False:
+        fig.xgrid.visible = False
+        fig.ygrid.visible = False
+
+    # y_axis_type=None
+    # ticker = SingleIntervalTicker(interval=1, num_minor_ticks=5)
+    # yaxis = LinearAxis(ticker=ticker)
+    # fig.add_layout(yaxis, 'left')
 
     return fig

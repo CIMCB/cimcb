@@ -62,7 +62,7 @@ class BaseModel(ABC):
             raise ValueError("length of X does not match length of Y.")
         return X, Y
 
-    def permutation_test(self, metric='r2q2', nperm=100, folds=5, hide_pval=False, grid_line=False, legend=True):
+    def permutation_test(self, metric='r2q2', nperm=100, folds=5, hide_pval=True, grid_line=False, legend=True):
         """Plots permutation test figures.
 
         Parameters
@@ -162,7 +162,7 @@ class BaseModel(ABC):
 
         return Peaksheet
 
-    def plot_loadings(self, PeakTable, data=None, peaklist=None, ylabel="Label", sort=False, sort_ci=True):
+    def plot_loadings(self, PeakTable, peaklist=None, ylabel="Label", sort=False, sort_ci=True):
         """Plots feature importance metrics.
 
         Parameters
@@ -191,10 +191,6 @@ class BaseModel(ABC):
         else:
             ci_loadings = self.bootci["model.x_loadings_"]
 
-        if data == None:
-            x_load = self.model.x_loadings_[:, i]
-        else:
-            x_load = data
         # Remove rows from PeakTable if not in peaklist
         if peaklist is not None:
             PeakTable = PeakTable[PeakTable["Name"].isin(peaklist)]
@@ -209,7 +205,7 @@ class BaseModel(ABC):
                 cii = None
             else:
                 cii = ci_loadings[i]
-            fig = scatterCI(x_load,
+            fig = scatterCI(self.model.x_loadings_[:, i],
                             ci=cii,
                             label=peaklabel,
                             hoverlabel=PeakTable[["Idx", "Name", "Label"]],
@@ -244,7 +240,7 @@ class BaseModel(ABC):
         #     Peaksheet["VIP-95CI"] = vip["VIP-95CI"].values
         # return Peaksheet
 
-    def evaluate(self, testset=None, plot_median=False, specificity=False, cutoffscore=False, bootnum=0, title_align="left", dist_smooth=None, bootmethod='BCA', show_table=True, label=None, legend='all'):
+    def evaluate(self, testset=None, plot_median=False, specificity=False, cutoffscore=False, bootnum=100, title_align="left", dist_smooth=None, bootmethod='BCA'):
         """Plots a figure containing a Violin plot, Distribution plot, ROC plot and Binary Metrics statistics.
 
         Parameters
@@ -262,36 +258,9 @@ class BaseModel(ABC):
             The number of bootstrap samples used in the computation.
         """
         test = testset
-        #self.train(self.X, self.Y)
-        Ytrue_train = self.Y_train
-        Yscore_train = self.Y_pred_train.flatten()
-
-        Y = self.Y
-        if label is None:
-            label = ['0', '1']
-        else:
-            label1 = np.array(label[self.Y == 0])[0]
-            label2 = np.array(label[self.Y == 1])[0]
-            label = [str(label1), str(label2)]
-
-
-        legend_violin = False
-        legend_dist = False
-        legend_roc = False
-        if legend in [True, 'all']:
-            legend_violin = True
-            legend_dist = True
-            legend_roc = True
-        if legend in [False, 'none', None]:
-            legend_violin = False
-            legend_dist = False
-            legend_roc = False
-        if legend is "violin":
-            legend_violin = True
-        if legend is "dist":
-            legend_dist = True
-        if legend is "roc":
-            legend_roc = True
+        self.train(self.X, self.Y)
+        Ytrue_train = self.Y
+        Yscore_train = self.Y_pred.flatten()
 
         # Get Ytrue_test, Yscore_test from testset
         if test is not None:
@@ -330,84 +299,27 @@ class BaseModel(ABC):
 
         # ROC plot
         if test is None:
-            roc_bokeh, stat = roc(Ytrue_train, Yscore_train, bootnum=bootnum, width=320, height=315, method=bootmethod, legend_basic=show_table)
+            roc_bokeh = roc(Ytrue_train, Yscore_train, bootnum=bootnum, width=320, height=315, method=bootmethod)
         else:
-            roc_bokeh, stat = roc(Ytrue_train, Yscore_train, test=test, bootnum=bootnum, width=320, height=315,  method=bootmethod, legend_basic=show_table, legend=legend_roc)
+            roc_bokeh = roc(Ytrue_train, Yscore_train, test=test, bootnum=bootnum, width=320, height=315,  method=bootmethod)
 
         # Violin plot
         self.score = Yscore_train
         self.true = Ytrue_train
 
         if test is None:
-            violin_bokeh = boxplot(Yscore_train, Ytrue_train, xlabel="Class", ylabel="Predicted Score", violin=True, color=["#FFCCCC", "#CCE5FF"], width=320, height=315, legend=legend_violin, legend_title=True, label=['0','1'], font_size="10pt", label_font_size="10pt")
+            violin_bokeh = boxplot(Yscore_train, Ytrue_train, xlabel="Class", ylabel="Predicted Score", violin=True, color=["#FFCCCC", "#CCE5FF"], width=320, height=315, legend=False, label=['0','1'], font_size="10pt", label_font_size="10pt")
         else:
-            violin_bokeh = boxplot(Yscore_combined, Ytrue_combined_name, xlabel="Class", ylabel="Predicted Score", violin=True, color=["#fcaeae", "#aed3f9", "#FFCCCC", "#CCE5FF"], width=320, height=315, group_name=["Train (0)", "Test (0)", "Train (1)", "Test (1)"], group_name_sort=["Test (0)", "Test (1)", "Train (0)", "Train (1)"], legend=legend_violin, legend_title=True, label=label+label, font_size="10pt", label_font_size="10pt")
+            violin_bokeh = boxplot(Yscore_combined, Ytrue_combined_name, xlabel="Class", ylabel="Predicted Score", violin=True, color=["#fcaeae", "#aed3f9", "#FFCCCC", "#CCE5FF"], width=320, height=315, group_name=["Train (0)", "Test (0)", "Train (1)", "Test (1)"], group_name_sort=["Test (0)", "Test (1)", "Train (0)", "Train (1)"], legend=False, font_size="10pt", label_font_size="10pt")
 
         # Distribution plot
         if test is None:
             dist_bokeh = distribution(Yscore_train, group=Ytrue_train, kde=True, title="", xlabel="Predicted Score", ylabel="p.d.f.", width=320, height=315, smooth=dist_smooth, font_size="10pt", label_font_size="10pt")
         else:
-            dist_bokeh = distribution(Yscore_combined, group=Ytrue_combined_name, kde=True, title="", xlabel="Predicted Score", ylabel="p.d.f.", width=320, height=315, smooth=dist_smooth, font_size="10pt", label_font_size="10pt", group_label=label, legend_location="top_left", legend=legend_dist, legend_title=True)
-
-        self.stat = np.array(stat)
-        if bootnum > 1:
-            self.table = pd.DataFrame(np.array(stat)[:3,:],
-                                       columns=['TrainLowCI', 'TrainUppCI', 'Train'],
-                                       index=['R²', 'AUC', 'ManW P-Value'])
-        else:
-            self.table = pd.DataFrame(np.array(stat)[:3,:].T,
-                                   columns=['TrainLowCI', 'TrainUppCI', 'Train'],
-                                   index=['R²', 'AUC', 'ManW P-Value'])
-        if test is None:
-            pass
-        else:
-            self.table["Test"] = np.array(stat)[3,:]
-
-        for i in self.table:
-            self.table[i][0] = np.round(self.table[i][0], 2)
-            self.table[i][1] = np.round(self.table[i][1], 2)
-            if self.table[i][2] > 0.01:
-                self.table[i][2] = "%0.2f" % self.table[i][2]
-            else:
-                self.table[i][2] = "%0.2e" % self.table[i][2]
+            dist_bokeh = distribution(Yscore_combined, group=Ytrue_combined_name, kde=True, title="", xlabel="Predicted Score", ylabel="p.d.f.", width=320, height=315, smooth=dist_smooth, font_size="10pt", label_font_size="10pt")
 
         # Combine table, violin plot and roc plot into one figure
-        if show_table == False:
-            fig = gridplot([[violin_bokeh, dist_bokeh, roc_bokeh]]) # roc_bokeh
-        else:
-            table = self.table
-
-            if bootnum > 1:
-                tabledata = dict(
-                    evaluate=[["Train"]],
-                    manw_pval=[["{}".format(table['Train'][2])]],
-                    auc=[["{} ({}, {})".format(table['Train'][1], table['TrainLowCI'][1], table['TrainUppCI'][1])]],
-                    R2=[["{} ({}, {})".format(table['Train'][0], table['TrainLowCI'][0], table['TrainUppCI'][0])]],
-                )
-            else:
-                tabledata = dict(
-                    evaluate=[["Train"]],
-                    manw_pval=[["{}".format(table['Train'][2])]],
-                    auc=[["{}".format(table['Train'][1])]],
-                    R2=[["{}".format(table['Train'][0])]],
-                )
-
-            if test is not None:
-                tabledata["evaluate"].append(["Test"])
-                tabledata["manw_pval"].append([table['Test'][2]])
-                tabledata["auc"].append(["{}".format(table['Test'][1])]),
-                tabledata["R2"].append(["{}".format(table['Test'][0])]),
-            columns = [TableColumn(field="evaluate", title="Evaluate"), TableColumn(field="manw_pval", title="ManW P-Value"), TableColumn(field="R2", title="R²"), TableColumn(field="auc", title="AUC")]
-
-            source = ColumnDataSource(data=tabledata)
-            if self.test is not None:
-                table_bokeh = widgetbox(DataTable(source=source, columns=columns, width=950, height=90), width=950, height=95)
-            else:
-                table_bokeh = widgetbox(DataTable(source=source, columns=columns, width=950, height=90), width=950, height=95)
-
-            fig1 = gridplot([[violin_bokeh, dist_bokeh, roc_bokeh]])
-            fig = layout(fig1, [table_bokeh])
-
+        fig = gridplot([[violin_bokeh, dist_bokeh, roc_bokeh]]) # roc_bokeh
         output_notebook()
         show(fig)
 
@@ -723,7 +635,7 @@ class BaseModel(ABC):
 
                     if metrics.auc(fpr, tpr) < 0.5:
                         fpr, tpr, tpr_ci = roc_calculate(group_copy, x_rotate, bootnum=100)
-                    grid[x, y] = roc_plot(fpr, tpr, tpr_ci, width=width_height, height=width_height, xlabel="1 - Specificity (LV{}/LV{})".format(x + 1, y + 1), ylabel="Sensitivity (LV{}/LV{})".format(x + 1, y + 1), legend=False, label_font_size=label_font)
+                    grid[x, y] = roc_plot(fpr, tpr, tpr_ci, width=width_height, height=width_height, xlabel="1-Specificity (LV{}/LV{})".format(x + 1, y + 1), ylabel="Sensitivity (LV{}/LV{})".format(x + 1, y + 1), legend=False, label_font_size=label_font)
 
             else:
 
@@ -809,7 +721,7 @@ class BaseModel(ABC):
                     fpr, tpr, tpr_ci = roc_calculate(group_copy, x_rotate, bootnum=100)
                     fpr_boot, tpr_boot, tpr_ci_boot = roc_calculate(group_copy, x_rotate_boot, bootnum=100)
 
-                    grid[x, y] = roc_plot(fpr, tpr, tpr_ci, width=width_height, height=width_height, xlabel="1 - Specificity (LV{}/LV{})".format(x + 1, y + 1), ylabel="Sensitivity (LV{}/LV{})".format(x + 1, y + 1), legend=True, label_font_size=label_font, roc2=True, fpr2=fpr_boot, tpr2=tpr_boot, tpr_ci2=tpr_ci_boot)
+                    grid[x, y] = roc_plot(fpr, tpr, tpr_ci, width=width_height, height=width_height, xlabel="1-Specificity (LV{}/LV{})".format(x + 1, y + 1), ylabel="Sensitivity (LV{}/LV{})".format(x + 1, y + 1), legend=True, label_font_size=label_font, roc2=True, fpr2=fpr_boot, tpr2=tpr_boot, tpr_ci2=tpr_ci_boot)
             # Bokeh grid
             fig = gridplot(grid.tolist())
 
@@ -951,7 +863,7 @@ class BaseModel(ABC):
                 fpr, tpr, tpr_ci = roc_calculate(group_copy, x_rotate, bootnum=100)
                 fpr_boot, tpr_boot, tpr_ci_boot = roc_calculate(group_copy, x_rotate_boot, bootnum=100)
 
-                grid[x, y] = roc_plot(fpr, tpr, tpr_ci, width=width_height, height=width_height, xlabel="1 - Specificity (LV{}/LV{})".format(x + 1, y + 1), ylabel="Sensitivity (LV{}/LV{})".format(x + 1, y + 1), legend=False, label_font_size=label_font, roc2=True, fpr2=fpr_boot, tpr2=tpr_boot, tpr_ci2=tpr_ci_boot)
+                grid[x, y] = roc_plot(fpr, tpr, tpr_ci, width=width_height, height=width_height, xlabel="1-Specificity (LV{}/LV{})".format(x + 1, y + 1), ylabel="Sensitivity (LV{}/LV{})".format(x + 1, y + 1), legend=False, label_font_size=label_font, roc2=True, fpr2=fpr_boot, tpr2=tpr_boot, tpr_ci2=tpr_ci_boot)
 
             # Bokeh grid
             fig = gridplot(grid.tolist())

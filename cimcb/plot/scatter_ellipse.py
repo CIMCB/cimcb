@@ -6,7 +6,7 @@ from bokeh.models import Range1d
 from ..utils import ci95_ellipse
 
 
-def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", xlabel="x", ylabel="y", width=600, height=600, legend=True, size=4, shape="circle", font_size="16pt", label_font_size="13pt", col_palette=None, hover_xy=True, gradient=False, gradient_alt=False, hline=False, vline=False, xrange=None, yrange=None, ci95=False, scatterplot=True, extraci95_x=False, extraci95_y=False, extraci95=False, scattershow=None):
+def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", xlabel="x", ylabel="y", width=600, height=600, legend=True, size=4, shape="circle", font_size="16pt", label_font_size="13pt", col_palette=None, hover_xy=True, gradient=False, gradient_alt=False, hline=False, vline=False, xrange=None, yrange=None, ci95=False, scatterplot=True, extraci95_x=False, extraci95_y=False, extraci95=False, scattershow=None, extraci95_x2=False, extraci95_y2=False, orthog_line=True, grid_line=False, mirror_range=False, legend_title=False):
     """Creates a scatterplot using Bokeh.
 
     Required Parameters
@@ -59,6 +59,9 @@ def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", 
             else:
                 col.append(col_palette[2])
 
+    if group is None:
+        group_label = [0] * len(X)
+
     # Bokeh data source with data labels
     data = {"x": x, "y": y, "group": group_copy, "col": col}
     data_label = {}
@@ -75,12 +78,12 @@ def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", 
         TOOLTIPS.append((str(name), "@" + str(name)))
 
     # Base figure
-    fig = figure(title=title, x_axis_label=xlabel, y_axis_label=ylabel, plot_width=width, plot_height=height, x_range=xrange, y_range=yrange)
+    fig = figure(title=title, x_axis_label=xlabel, y_axis_label=ylabel, plot_width=width, plot_height=height)
 
     # Add to plot
     if scattershow in [2, 4]:
         if shape is "circle":
-            shape = fig.circle("x", "y", size=size, alpha=0.6, color="col", source=source)
+            shape = fig.circle("x", "y", size=size * 0.75, alpha=0.6, color="col", source=source)
         elif shape is "triangle":
             shape = fig.triangle("x", "y", size=size, alpha=0.6, color="col", source=source)
         else:
@@ -110,11 +113,21 @@ def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", 
 
     if gradient is not False:
         if gradient_alt is False:
-            slope = Slope(gradient=gradient, y_intercept=0, line_color="black", line_width=2, line_alpha=0.3)
-            fig.add_layout(slope)
-            new_gradient = -(1 / gradient)
-            slope2 = Slope(gradient=new_gradient, y_intercept=0, line_color="black", line_dash="dashed", line_width=2, line_alpha=0.10)
-            fig.add_layout(slope2)
+            if orthog_line == True:
+                slope = Slope(gradient=gradient, y_intercept=0, line_color="black", line_width=2, line_alpha=0.3)
+                fig.add_layout(slope)
+                new_gradient = -(1 / gradient)
+                slope2 = Slope(gradient=new_gradient, y_intercept=0, line_dash="dashed", line_width=2, line_alpha=0.3)
+                fig.add_layout(slope2)
+            else:
+                new_gradient = -(1 / gradient)
+                slope2 = Slope(gradient=new_gradient, y_intercept=0, line_dash="solid", line_width=3, line_alpha=0.3)
+                fig.add_layout(slope2)
+                h = Span(location=0, dimension="width", line_color="black", line_width=3, line_alpha=0.06)
+                fig.add_layout(h)
+                v = Span(location=0, dimension="height", line_color="black", line_width=3, line_alpha=0.06)
+                fig.add_layout(v)
+
         else:
             c = 0.5 - gradient * 0.5
             slope = Slope(gradient=gradient, y_intercept=c, line_color="black", line_width=2, line_alpha=0.3)
@@ -140,8 +153,8 @@ def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", 
             group_label = [0] * len(X)
 
         group_label = group_copy
-        x_score = x
-        y_score = y
+        x_score = extraci95_x2
+        y_score = extraci95_y2
         # Score plot extra: 95% confidence ellipse using PCA
         unique_group = np.sort(np.unique(group_label))
         unique_group_label = np.sort(label.unique())
@@ -170,18 +183,28 @@ def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", 
 
             # Plot ci95 ellipse outer line
             if scattershow is 1:
-                fig.line(m[:, 0], m[:, 1], color=list_color[i], line_width=2, alpha=0.8, line_dash="solid", legend="{}".format(unique_group_label[i]))
-            else:
-                fig.line(m[:, 0], m[:, 1], color=list_color[i], line_width=2, alpha=0.8, line_dash="solid", legend="{}".format(unique_group_label[i]))
+                fig.line(m[:, 0], m[:, 1], color=list_color[i], line_width=2, alpha=0.8, line_dash="solid")
+            elif scattershow in [0, 2, 4]:
+                fig.line(m[:, 0], m[:, 1], color=list_color[i], line_width=2, alpha=0.8, line_dash="solid")
                 fig.line(p[:, 0], p[:, 1], color=list_color[i], line_width=3, alpha=0.4)
+            else:
+                pass
 
             # Plot ci95 ellipse shade
+            unique_group_label = np.sort(label.unique())
             if scattershow is 1:
                 fig.patch(m[:, 0], m[:, 1], color=list_color[i], alpha=0.07)
-            else:
+                fig.x(np.median(m[:, 0]), np.median(m[:, 1]), size=size, alpha=0.6, color=list_color[i], line_width=2)
+            elif scattershow in [0, 4]:
                 fig.patch(m[:, 0], m[:, 1], color=list_color[i], alpha=0.15)
                 fig.patch(p[:, 0], p[:, 1], color=list_color[i], alpha=0.02)
-            fig.x(np.median(m[:, 0]), np.median(m[:, 1]), size=size, alpha=0.6, color=list_color[i], line_width=2)
+                fig.x(np.median(m[:, 0]), np.median(m[:, 1]), size=size, alpha=0.6, color=list_color[i], line_width=2)
+            elif scattershow is 2:
+                fig.patch(m[:, 0], m[:, 1], color=list_color[i], alpha=0.15, legend=unique_group_label[i])
+                fig.patch(p[:, 0], p[:, 1], color=list_color[i], alpha=0.02)
+                fig.x(np.median(m[:, 0]), np.median(m[:, 1]), size=size, alpha=0.6, color=list_color[i], line_width=2)
+            else:
+                pass
 
             if scattershow is 1:
                 maxv = max(np.abs(m).flatten())
@@ -223,17 +246,23 @@ def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", 
                 # Plot ci95 ellipse outer line
                 if scattershow is 1:
                     fig.line(m[:, 0], m[:, 1], color=list_color[i], line_width=2, alpha=0.8, line_dash="dashed")
-                else:
+                elif scattershow in [0, 3, 4]:
                     fig.line(m[:, 0], m[:, 1], color=list_color[i], line_width=2, alpha=0.8, line_dash="dashed")
                     fig.line(p[:, 0], p[:, 1], color=list_color[i], line_width=3, alpha=0.4, line_dash="dashed")
+                else:
+                    pass
 
+                unique_group_label = np.sort(label.unique())
                 # Plot ci95 ellipse shade
                 if scattershow is 1:
-                    fig.patch(m[:, 0], m[:, 1], color=list_color[i], alpha=0.07)
-                else:
-                    fig.patch(m[:, 0], m[:, 1], color=list_color[i], alpha=0.15)
+                    fig.patch(m[:, 0], m[:, 1], color=list_color[i], alpha=0.07, legend=unique_group_label[i])
+                    fig.x(np.median(m[:, 0]), np.median(m[:, 1]), size=size, alpha=0.6, color=list_color[i], line_width=2)
+                elif scattershow in [0, 3, 4]:
+                    fig.patch(m[:, 0], m[:, 1], color=list_color[i], alpha=0.15, legend=unique_group_label[i])
                     fig.patch(p[:, 0], p[:, 1], color=list_color[i], alpha=0.02)
-                fig.x(np.median(m[:, 0]), np.median(m[:, 1]), size=size, alpha=0.6, color=list_color[i], line_width=2)
+                    fig.x(np.median(m[:, 0]), np.median(m[:, 1]), size=size, alpha=0.6, color=list_color[i], line_width=2, legend=unique_group_label[i])
+                else:
+                    pass
 
                 if scattershow is 1:
                     maxv = max(np.abs(m).flatten())
@@ -241,16 +270,33 @@ def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", 
                     maxv = max(np.abs(p).flatten())
                 max_val.append(maxv)
 
-        max_range = max(max_val)
-        new_range_min = -max_range - 0.05 * max_range
-        new_range_max = max_range + 0.05 * max_range
-        fig.y_range = Range1d(new_range_min, new_range_max)
-        fig.x_range = Range1d(new_range_min, new_range_max)
+        if mirror_range == False:
+            max_range = max(max_val)
+            new_range_min = -max_range - 0.05 * max_range
+            new_range_max = max_range + 0.05 * max_range
+            fig.y_range = Range1d(new_range_min, new_range_max)
+            fig.x_range = Range1d(new_range_min, new_range_max)
+        else:
+            pass
+
+    # Add a legend
+    #unique_group_label = np.sort(label.unique())
+    # unique_color_label = ["red", "blue"]
+    # unique_group_label[0] = str(unique_group_label[0])
+
+    # y = 0
+    # x = np.max(x) * 100 + np.max(x)
+    # fig.square(x, y, color="red", legend=unique_group_label[0], alpha=0.5)
+    # fig.square(x, y, color="blue", legend=unique_group_label[1], alpha=0.5)
 
     # Font-sizes
     fig.title.text_font_size = font_size
     fig.xaxis.axis_label_text_font_size = label_font_size
     fig.yaxis.axis_label_text_font_size = label_font_size
+
+    if grid_line == False:
+        fig.xgrid.visible = False
+        fig.ygrid.visible = False
 
     # Extra padding
     fig.min_border_left = 20
@@ -260,12 +306,13 @@ def scatter_ellipse(x, y, x1, y1, label=None, group=None, title="Scatter Plot", 
 
     # Remove legend
     if legend is True:
-        fig.legend.visible = True
-        fig.legend.location = "bottom_right"
+        if legend_title == False:
+            fig.legend.visible = True
+            fig.legend.location = "bottom_right"
+        else:
+            fig.legend.visible = False
+            fig.title.text = "Groups: {} (Red) & {} (Blue)".format(unique_group_label[0], unique_group_label[1])
     else:
         fig.legend.visible = False
-    # if scatterplot is True:
-    #     if legend is False:
-    #         fig.legend.visible = False
 
     return fig

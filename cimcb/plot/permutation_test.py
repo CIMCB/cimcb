@@ -5,6 +5,7 @@ from pydoc import locate
 from copy import deepcopy, copy
 from joblib import Parallel, delayed
 from bokeh.layouts import gridplot
+from statsmodels.stats.weightstats import ttest_ind
 from bokeh.models import HoverTool, Slope, Span
 from bokeh.plotting import ColumnDataSource, figure
 from scipy.stats import ttest_1samp
@@ -38,8 +39,13 @@ class permutation_test():
 
         # Calculate binary_metrics for stats_full
         y_pred_test = model.train(X, Y)
-        y_pred_full = model.test(X)
-        stats_full = binary_metrics(Y, y_pred_full)
+        #y_pred_full = model.test(X)
+        stats_full = binary_metrics(Y, y_pred_test)
+
+        # if seed is set, make sure it's none
+        if 'seed' in self.params:
+            self.params['seed'] = None
+        model = self.model(**self.params)
 
         # Calculate binary_metrics for stats_cv
         y_pred_cv = [None] * len(Y)
@@ -101,7 +107,7 @@ class permutation_test():
         self._calc_original()
         self._calc_perm()
 
-    def plot(self, metric="r2q2"):
+    def plot(self, metric="r2q2", hide_pval=True, grid_line=False, legend=True):
 
         # Choose metric to plot
         metric_title = np.array(["ACCURACY", "AIC", "AUC", "BIC", "F1-SCORE", "PRECISION", "R²", "SENSITIVITY", "SPECIFICITY", "SSE"])
@@ -138,10 +144,13 @@ class permutation_test():
         r2yintercept = stats_r2[0] - r2gradient
         q2yintercept = stats_q2[0] - q2gradient
 
+        max_vals = max(np.max(stats_r2), np.max(stats_q2))
+        min_vals = min(np.min(stats_r2), np.min(stats_q2))
+        y_range_share = (min_vals - abs(0.2 * min_vals), max_vals + abs(0.1 * min_vals))
         # Figure 1
         data = {"corr": stats_corr, "r2": stats_r2, "q2": stats_q2}
         source = ColumnDataSource(data=data)
-        fig1 = figure(plot_width=470, plot_height=410, x_range=(-0.15, 1.15), x_axis_label="Correlation", y_axis_label=full_text + " & " + cv_text)
+        fig1 = figure(plot_width=470, plot_height=410, x_range=(-0.15, 1.15), x_axis_label="Correlation", y_range=y_range_share, y_axis_label=full_text + " & " + cv_text)
         # Lines
         r2slope = Slope(gradient=r2gradient, y_intercept=r2yintercept, line_color="black", line_width=2, line_alpha=0.3)
         q2slope = Slope(gradient=q2gradient, y_intercept=q2yintercept, line_color="black", line_width=2, line_alpha=0.3)
@@ -182,7 +191,22 @@ class permutation_test():
         x2_pdf_grid = [-x for x in x2_pdf_grid]
 
         # Figure 2
-        fig2 = figure(plot_width=470, plot_height=410, x_range=(min(x2_grid) * 1.1, max(stats_r2[0], max(x1_grid)) + 0.65), y_range=((min(x2_pdf_grid) - 1) * 1.2, (max(x1_pdf_grid) + 1) * 1.1), x_axis_label=full_text + " & " + cv_text, y_axis_label="p.d.f.")
+        if hide_pval == True:
+            y_range_share2 = (min_vals - abs(0.2 * min_vals), max_vals + abs(0.1 * max_vals))
+            ymin = min(x2_pdf_grid) - 1
+            xmin = max(x1_pdf_grid) + 1
+            yy_range = (ymin - abs(0.1 * ymin), xmin + abs(0.1 * xmin))
+        else:
+            y_range_share2 = [min_vals - abs(0.2 * min_vals), max_vals + 0.8]
+            ymin = min(x2_pdf_grid) - 1.2
+            xmin = max(x1_pdf_grid) + 1.2
+            yy_range = (ymin - 1, xmin + 1)
+            if metric == "auc":
+                if y_range_share2[1] > 1.5:
+                    y_range_share2[1] = 1.5
+            y_range_share2 = tuple(y_range_share2)
+
+        fig2 = figure(plot_width=470, plot_height=410, x_axis_label=full_text + " & " + cv_text, y_axis_label="p.d.f.", x_range=y_range_share2, y_range=yy_range)
         slope_0 = Span(location=0, dimension="width", line_color="black", line_width=2, line_alpha=0.3)
         fig2.add_layout(slope_0)
 
@@ -198,8 +222,9 @@ class permutation_test():
 
         # Lollipops R2
         # Do a t-test
-        a = ttest_1samp(stats_r2[1:], [stats_r2[0]])[1][0]
-        b = a / 2
+        #a = ttest_1samp(stats_r2[1:], [stats_r2[0]])[1][0]
+        #b = a / 2
+        b = ttest_ind(stats_r2[1:], [stats_r2[0]], alternative='smaller')[1]
         if b > 0.005:
             data2_manu = "%0.2f" % b
         else:
@@ -210,18 +235,24 @@ class permutation_test():
         source2 = ColumnDataSource(data=data2)
         data2_line = {"x": [stats_r2[0], stats_r2[0]], "y": [max(x1_pdf_grid) + 1, 0], "hover": [str(data2_manu), str(data2_manu)]}
         source2_line = ColumnDataSource(data=data2_line)
-        r2fig2_line = fig2.line("x", "y", line_width=3, line_color="red", source=source2_line)
-        r2fig2 = fig2.circle("x", "y", fill_color="red", size=8, legend=full_text, source=source2)
+        r2fig2_line = fig2.line("x", "y", line_width=2.25, line_color="red", alpha=0.5, source=source2_line)
+        r2fig2 = fig2.circle("x", "y", fill_color="red", line_color="grey", alpha=0.75, size=7, legend=full_text, source=source2)
 
         # Lollipops Q2
         # Do a t-test
-        if ttest_1samp(stats_q2[1:], [stats_q2[0]])[1][0] / 2 > 0.005:
-            a = ttest_1samp(stats_q2[1:], [stats_q2[0]])[1][0]
-            b = a / 2
+        # if ttest_1samp(stats_q2[1:], [stats_q2[0]])[1][0] / 2 > 0.005:
+        #     a = ttest_1samp(stats_q2[1:], [stats_q2[0]])[1][0]
+        #     b = a / 2
+        #     data3_manu = "%0.2f" % b
+        # else:
+        #     a = ttest_1samp(stats_q2[1:], [stats_q2[0]])[1][0]
+        #     b = a / 2
+        #     data3_manu = "%0.2e" % b
+
+        b = ttest_ind(stats_q2[1:], [stats_q2[0]], alternative='smaller')[1]
+        if b > 0.005:
             data3_manu = "%0.2f" % b
         else:
-            a = ttest_1samp(stats_q2[1:], [stats_q2[0]])[1][0]
-            b = a / 2
             data3_manu = "%0.2e" % b
 
         # Plot
@@ -229,22 +260,34 @@ class permutation_test():
         source3 = ColumnDataSource(data=data3)
         data3_line = {"x": [stats_q2[0], stats_q2[0]], "y": [(min(x2_pdf_grid) - 1), 0], "hover": [data3_manu, data3_manu]}
         source3_line = ColumnDataSource(data=data3_line)
-        q2fig2_line = fig2.line("x", "y", line_width=3, line_color="blue", source=source3_line)
-        q2fig2 = fig2.circle("x", "y", fill_color="blue", size=8, legend=cv_text, source=source3)
+        q2fig2_line = fig2.line("x", "y", line_width=2.25, line_color="blue", alpha=0.5, source=source3_line)
+        q2fig2 = fig2.circle("x", "y", fill_color="blue", line_color="grey", alpha=0.75, size=7, legend=cv_text, source=source3)
 
-        # Add text
-        textr2 = "True " + full_text + "\nP-Value: {}".format(data2_manu)
-        textq2 = "True " + cv_text + "\nP-Value: {}".format(data3_manu)
-        fig2.text(x=[stats_r2[0] + 0.05, stats_q2[0] + 0.05], y=[(max(x1_pdf_grid) + 0.5), (min(x2_pdf_grid) - 1.5)], text=[textr2, textq2], angle=0, text_font_size="8pt")
+        if hide_pval == False:
+            # Add text
+            textr2 = "True " + full_text + "\nP-Value: {}".format(data2_manu)
+            textq2 = "True " + cv_text + "\nP-Value: {}".format(data3_manu)
+            fig2.text(x=[stats_r2[0] + 0.05, stats_q2[0] + 0.05], y=[(max(x1_pdf_grid) + 0.5), (min(x2_pdf_grid) - 1.5)], text=[textr2, textq2], angle=0, text_font_size="8pt")
 
         # Font-sizes
         fig1.xaxis.axis_label_text_font_size = "13pt"
         fig1.yaxis.axis_label_text_font_size = "13pt"
         fig2.xaxis.axis_label_text_font_size = "12pt"
         fig2.yaxis.axis_label_text_font_size = "12pt"
-        #fig2.legend.location = "top_left"
+        fig1.legend.location = "bottom_right"
+        fig2.legend.location = "top_left"
         fig1.legend.visible = True
         fig2.legend.visible = True
+
+        if grid_line == False:
+            fig1.xgrid.visible = False
+            fig1.ygrid.visible = False
+            fig2.xgrid.visible = False
+            fig2.ygrid.visible = False
+
+        if legend == False:
+            fig1.legend.visible = False
+            fig2.legend.visible = False
 
         fig = gridplot([[fig1, fig2]])
         return fig

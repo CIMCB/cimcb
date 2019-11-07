@@ -9,7 +9,8 @@ from bokeh.layouts import gridplot
 from bokeh.plotting import ColumnDataSource, figure
 from .BaseModel import BaseModel
 from ..plot import permutation_test
-from ..plot import scatter, distribution, roc_calculate, roc_plot, boxplot
+from ..plot import scatter, distribution, boxplot
+from ..utils import binary_metrics, binary_evaluation
 
 
 class PLS_SIMPLS(BaseModel):
@@ -36,7 +37,7 @@ class PLS_SIMPLS(BaseModel):
     """
 
     parametric = True
-    bootlist = ["model.vip_", "model.coef_", "model.x_loadings_", "model.x_scores_", "Y_pred", "model.pctvar_", "model.y_loadings_", "model.pfi_acc_", "model.pfi_r2q2_", "model.pfi_auc_"]  # list of metrics to bootstrap
+    bootlist = ["model.vip_", "model.coef_", "model.x_loadings_", "model.x_scores_", "Y_pred", "model.pctvar_", "model.y_loadings_", "model.eval_metrics_"]  # list of metrics to bootstrap
 
     def __init__(self, n_components=2, pfi_metric="r2q2", pfi_nperm=0, pfi_mean=True):
         self.model = PLSRegression()  # Should change this to an empty model
@@ -90,6 +91,8 @@ class PLS_SIMPLS(BaseModel):
         sumSq = np.sum(Xscores ** 2, axis=0) * np.sum(Yloadings ** 2, axis=0)
         self.model.vip_ = np.sqrt(len(Xloadings) * np.sum(sumSq * W0 ** 2, axis=1) / np.sum(sumSq, axis=0))
 
+        self.x_loadings_ = Xloadings
+        self.feature_importance_ = np.array([self.model.coef_, self.model.vip_]).T
         # Calculate and return Y predicted value
         newX = np.insert(X, 0, np.ones(len(X)), axis=1)
         y_pred_train = np.matmul(newX, Beta)
@@ -105,13 +108,26 @@ class PLS_SIMPLS(BaseModel):
             self.model.pfi_r2q2_ = pfi_r2q2
             self.model.pfi_auc_ = pfi_auc
 
+        self.metrics_key = []
+        self.model.eval_metrics_ = []
+        bm = binary_evaluation(Y, y_pred_train)
+        for key, value in bm.items():
+            self.model.eval_metrics_.append(value)
+            self.metrics_key.append(key)
+
+        self.Y_train = Y
+        self.Y_pred_train = y_pred_train
+
+        self.model.eval_metrics_ = np.array(self.model.eval_metrics_)
+        #self.metrics = np.array(self.metrics)
+
         # Storing X, Y, and Y_pred
         self.X = X
         self.Y = Y
         self.Y_pred = y_pred_train
         return y_pred_train
 
-    def test(self, X):
+    def test(self, X, Y=None):
         """Calculate and return Y predicted value.
 
         Parameters
@@ -134,6 +150,16 @@ class PLS_SIMPLS(BaseModel):
         newX = np.insert(X, 0, np.ones(len(X)), axis=1)
         y_pred_test = np.matmul(newX, self.model.beta_)
         self.Y_pred = y_pred_test
+
+        if Y is not None:
+            self.metrics_key = []
+            self.model.eval_metrics_ = []
+            bm = binary_evaluation(Y, y_pred_test)
+            for key, value in bm.items():
+                self.model.eval_metrics_.append(value)
+                self.metrics_key.append(key)
+
+            self.model.eval_metrics_ = np.array(self.model.eval_metrics_)
         return y_pred_test
 
     @staticmethod

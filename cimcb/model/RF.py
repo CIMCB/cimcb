@@ -3,6 +3,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 from .BaseModel import BaseModel
+from ..utils import binary_metrics, binary_evaluation
 
 
 class RF(BaseModel):
@@ -10,6 +11,8 @@ class RF(BaseModel):
 
     parametric = True
     bootlist = None  # list of metrics to bootstrap
+
+    bootlist = ["Y_pred", "model.eval_metrics_"]  # list of metrics to bootstrap
 
     def __init__(self, n_estimators=100, max_features="auto", max_depth=None, criterion="gini", min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=None):
         self.model = RandomForestClassifier(n_estimators=n_estimators, max_features=max_features, max_depth=max_depth, criterion=criterion, min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf, max_leaf_nodes=max_leaf_nodes, n_jobs=n_jobs)
@@ -57,13 +60,30 @@ class RF(BaseModel):
         # Calculate and return Y prediction value
         y_pred_train = np.array(self.model.predict_proba(X)[:, self.pred_index])
 
+        self.model.y_loadings_ = np.array([0, 0, 0])
+        self.model.x_scores_ = np.array([0, 0, 0])
+        self.model.pctvar_ = np.array([0, 0, 0])
+
         # Storing X, Y, and Y_pred
         self.X = X
         self.Y = Y
         self.Y_pred = y_pred_train
+
+        self.metrics_key = []
+        self.model.eval_metrics_ = []
+        bm = binary_evaluation(Y, y_pred_train)
+        for key, value in bm.items():
+            self.model.eval_metrics_.append(value)
+            self.metrics_key.append(key)
+
+        self.Y_train = Y
+        self.Y_pred_train = y_pred_train
+
+        self.model.eval_metrics_ = np.array(self.model.eval_metrics_)
+
         return y_pred_train
 
-    def test(self, X):
+    def test(self, X, Y=None):
         """Calculate and return Y predicted value.
 
         Parameters
@@ -83,4 +103,16 @@ class RF(BaseModel):
 
         # Calculate and return Y predicted value
         y_pred_test = np.array(self.model.predict_proba(X)[:, self.pred_index])
+
+        if Y is not None:
+            self.metrics_key = []
+            self.model.eval_metrics_ = []
+            bm = binary_evaluation(Y, y_pred_test)
+            for key, value in bm.items():
+                self.model.eval_metrics_.append(value)
+                self.metrics_key.append(key)
+
+            self.model.eval_metrics_ = np.array(self.model.eval_metrics_)
+
+        self.Y_pred = y_pred_test
         return y_pred_test

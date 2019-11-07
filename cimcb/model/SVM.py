@@ -3,6 +3,7 @@ import pandas as pd
 from sklearn.svm import SVC
 from sklearn.metrics import roc_auc_score
 from .BaseModel import BaseModel
+from ..utils import binary_metrics, binary_evaluation
 
 
 class SVM(BaseModel):
@@ -10,6 +11,8 @@ class SVM(BaseModel):
 
     parametric = True
     bootlist = None  # list of metrics to bootstrap
+
+    bootlist = ["Y_pred", "model.eval_metrics_"]  # list of metrics to bootstrap
 
     def __init__(self, C=1.0, kernel="rbf", degree=3, gamma="auto", tol=0.001, max_iter=-1):
         self.model = SVC(C=C, kernel=kernel, degree=degree, gamma=gamma, probability=True, tol=tol, max_iter=max_iter)
@@ -57,13 +60,29 @@ class SVM(BaseModel):
         # Calculate and return Y prediction value
         y_pred_train = np.array(self.model.predict_proba(X)[:, self.pred_index])
 
+        self.model.y_loadings_ = np.array([0, 0, 0])
+        self.model.x_scores_ = np.array([0, 0, 0])
+        self.model.pctvar_ = np.array([0, 0, 0])
+
         # Storing X, Y, and Y_pred
         self.X = X
         self.Y = Y
         self.Y_pred = y_pred_train
+        self.metrics_key = []
+        self.model.eval_metrics_ = []
+        bm = binary_evaluation(Y, y_pred_train)
+        for key, value in bm.items():
+            self.model.eval_metrics_.append(value)
+            self.metrics_key.append(key)
+
+        self.model.eval_metrics_ = np.array(self.model.eval_metrics_)
+
+        self.Y_train = Y
+        self.Y_pred_train = y_pred_train
+
         return y_pred_train
 
-    def test(self, X):
+    def test(self, X, Y=None):
         """Calculate and return Y predicted value.
 
         Parameters
@@ -83,4 +102,15 @@ class SVM(BaseModel):
 
         # Calculate and return Y predicted value
         y_pred_test = np.array(self.model.predict_proba(X)[:, self.pred_index])
+        if Y is not None:
+            self.metrics_key = []
+            self.model.eval_metrics_ = []
+            bm = binary_evaluation(Y, y_pred_test)
+            for key, value in bm.items():
+                self.model.eval_metrics_.append(value)
+                self.metrics_key.append(key)
+
+            self.model.eval_metrics_ = np.array(self.model.eval_metrics_)
+
+        self.Y_pred = y_pred_test
         return y_pred_test

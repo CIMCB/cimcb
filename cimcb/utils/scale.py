@@ -81,6 +81,6 @@ def scale(x, axis=0, ddof=1, method="auto", mu="default", sigma="default", retur
         z = z.T
 
     if return_mu_sigma is True:
-        return mu, sigma
+        return z, mu, sigma
     else:
         return z
