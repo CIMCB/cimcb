@@ -1,6 +1,6 @@
 package:
   name: cimcb
-  version: 2.0.0
+  version: 2.0.42
 
 source:
   path: ../
@@ -15,14 +15,14 @@ requirements:
     - setuptools
     - python >=3.5
     - bokeh >=1.0.0
-    - keras
+    - keras >=2.2.4
     - numpy >=1.12
     - pandas
     - scipy
     - scikit-learn
     - statsmodels
     - python >=3.5
-    - tensorflow
+    - theano
     - tqdm
     - xlrd
     - joblib
@@ -31,13 +31,13 @@ requirements:
   run:
     - python >=3.5
     - bokeh >=1.0.0
-    - keras
+    - keras >=2.2.4
     - numpy >=1.12
     - pandas
     - scipy
     - scikit-learn
     - statsmodels
-    - tensorflow
+    - theano
     - tqdm
     - xlrd
     - joblib
