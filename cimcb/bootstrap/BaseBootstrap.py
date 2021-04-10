@@ -245,7 +245,7 @@ class BaseBootstrap(ABC):
                 idx = self.bootidx_oob[i][j]
                 x_loc_oob_dict[idx].append(val)
 
-        #print(x_loc_oob_dict)
+        # print(x_loc_oob_dict)
         x_loc_oob_ci_dict = dict_95ci(x_loc_oob_dict)
         x_loc_oob_ci = []
         for key in x_loc_oob_ci_dict.keys():
@@ -484,6 +484,106 @@ class BaseBootstrap(ABC):
         output_notebook()
         show(fig)
 
+    def plot_weights(self, PeakTable, peaklist=None, data=None, ylabel="Label", sort=False, sort_ci=True, grid_line=False, plot='data', x_axis_below=True):
+        """Plots feature importance metrics.
+
+        Parameters
+        ----------
+        PeakTable : DataFrame
+            Peak sheet with the required columns.
+
+        peaklist : list or None, (default None)
+            Peaks to include in plot (the default is to include all samples).
+
+        ylabel : string, (default "Label")
+            Name of column in PeakTable to use as the ylabel.
+
+        sort : boolean, (default True)
+            Whether to sort plots in absolute descending order.
+
+        Returns
+        -------
+        Peaksheet : DataFrame
+            New PeakTable with added "Coef" and "VIP" columns (+ "Coef-95CI" and  "VIP-95CI" if calc_bootci is used prior to plot_featureimportance).
+        """
+
+        n_loadings = len(self.bootci["model.x_loadings_"])
+        ci_loadings = self.bootci["model.x_loadings_"]
+
+        if isinstance(plot, str):
+            if plot == 'data':
+                mid = self.stat['model.x_loadings_']
+            elif plot == 'median':
+                mid = []
+                for i in self.bootci['model.x_loadings_']:
+                    mid.append(i[:, 2])
+                mid = np.array(mid).T
+            else:
+                pass
+        else:
+            mid = plot
+
+        # Remove rows from PeakTable if not in peaklist
+        if peaklist is not None:
+            PeakTable = PeakTable[PeakTable["Name"].isin(peaklist)]
+        peaklabel = PeakTable[ylabel]
+
+        a = [None] * 2
+
+        if self.name == 'cimcb.model.NN_SigmoidSigmoid' or self.name == 'cimcb.model.NN_LinearSigmoid':
+            lv_name = "Neuron"
+        else:
+            lv_name = "LV"
+
+        # Current issue with Bokeh & Chrome, can't plot >1500 features.
+        n = 1500
+        if len(peaklist) > n:
+            peaklist_chunk = [peaklist[i * n:(i + 1) * n] for i in range((len(peaklist) + n - 1) // n)]
+            peaklabel_chunk = [peaklabel[i * n:(i + 1) * n] for i in range((len(peaklabel) + n - 1) // n)]
+            grid = np.full((len(peaklist_chunk), n_loadings), None)
+            for i in range(n_loadings):
+                cii = ci_loadings[i]
+                midi = mid[:, i]
+                cii_chunk = [cii[i * n:(i + 1) * n] for i in range((len(cii) + n - 1) // n)]
+                midi_chunk = [midi[i * n:(i + 1) * n] for i in range((len(midi) + n - 1) // n)]
+                for j in range(len(peaklist_chunk)):
+                    PeakTable_chunk = PeakTable[PeakTable["Name"].isin(peaklist_chunk[j])]
+                    grid[i,j] = scatterCI(midi_chunk[j],
+                                    ci=cii_chunk[j],
+                                    label=peaklabel_chunk[j],
+                                    hoverlabel=PeakTable_chunk[["Idx", "Name", "Label"]],
+                                    hline=0,
+                                    col_hline=True,
+                                    title="Weights Plot: {} {}".format(lv_name, i + 1),
+                                    sort_abs=sort,
+                                    sort_ci=sort_ci,
+                                    grid_line=grid_line,
+                                    x_axis_below=x_axis_below)
+            fig = gridplot(grid.tolist())
+
+        else:
+            # Plot
+            plots = []
+            for i in range(n_loadings):
+                cii = ci_loadings[i]
+                midi = mid[:, i]
+                fig = scatterCI(midi,
+                                ci=cii,
+                                label=peaklabel,
+                                hoverlabel=PeakTable[["Idx", "Name", "Label"]],
+                                hline=0,
+                                col_hline=True,
+                                title="Weights Plot: {} {}".format(lv_name, i + 1),
+                                sort_abs=sort,
+                                sort_ci=sort_ci,
+                                grid_line=grid_line,
+                                x_axis_below=x_axis_below)
+                plots.append([fig])
+
+            fig = layout(plots)
+        output_notebook()
+        show(fig)
+
     def plot_projections(self, label=None, size=12, ci95=True, scatterplot=False, weight_alt=False, bc="nonparametric", legend='all', plot='ci', scatter_ib=True, orthog_line=True, grid_line=False, smooth=0, plot_roc='median'):
         bootx = 1
         num_x_scores = len(self.stat['model.x_scores_'].T)
@@ -582,6 +682,7 @@ class BaseBootstrap(ABC):
         self.x_scores_full = x_scores_ib
 
         if num_x_scores == 1:
+            print('LV must be > 1 to plot projections')
             pass
         else:
             if scatter_ib is True:
@@ -717,8 +818,8 @@ class BaseBootstrap(ABC):
             # Bokeh grid
             fig = gridplot(grid.tolist())
 
-        output_notebook()
-        show(fig)
+            output_notebook()
+            show(fig)
 
     def plot_featureimportance(self, PeakTable, peaklist=None, ylabel="Label", sort=True, sort_ci=True, grid_line=False, plot='data', x_axis_below=True):
         """Plots feature importance metrics.
@@ -778,15 +879,37 @@ class BaseBootstrap(ABC):
             PeakTable = PeakTable[PeakTable["Name"].isin(peaklist)]
         peaklabel = PeakTable[ylabel]
 
-        # Plot
-        fig_1 = scatterCI(mid_coef, ci=ci_coef, label=peaklabel, hoverlabel=PeakTable[["Idx", "Name", "Label"]], hline=0, col_hline=True, title=name_coef, sort_abs=sort, sort_ci=sort_ci, grid_line=grid_line, x_axis_below=x_axis_below)
-        if name_vip == "Variable Importance in Projection (VIP) Plot":
-            fig_2 = scatterCI(mid_vip, ci=ci_vip, label=peaklabel, hoverlabel=PeakTable[["Idx", "Name", "Label"]], hline=1, col_hline=False, title=name_vip, sort_abs=sort, sort_ci=sort_ci, sort_ci_abs=True, grid_line=grid_line, x_axis_below=x_axis_below)
-        else:
-            fig_2 = scatterCI(mid_vip, ci=ci_vip, label=peaklabel, hoverlabel=PeakTable[["Idx", "Name", "Label"]], hline=np.average(self.stat['model.vip_']), col_hline=False, title=name_vip, sort_abs=sort, sort_ci_abs=True, grid_line=grid_line, x_axis_below=x_axis_below)
+        # Current issue with Bokeh & Chrome, can't plot >1500 features.
+        n = 1500
+        if len(peaklist) > n:
+            peaklist_chunk = [peaklist[i * n:(i + 1) * n] for i in range((len(peaklist) + n - 1) // n)]
+            peaklabel_chunk = [peaklabel[i * n:(i + 1) * n] for i in range((len(peaklabel) + n - 1) // n)]
+            mid_coef_chunk = [mid_coef[i * n:(i + 1) * n] for i in range((len(mid_coef) + n - 1) // n)]
+            ci_coef_chunk = [ci_coef[i * n:(i + 1) * n] for i in range((len(ci_coef) + n - 1) // n)]
+            mid_vip_chunk = [mid_vip[i * n:(i + 1) * n] for i in range((len(mid_vip) + n - 1) // n)]
+            ci_vip_chunk = [ci_vip[i * n:(i + 1) * n] for i in range((len(ci_vip) + n - 1) // n)]
 
-        ######
-        fig = layout([[fig_1], [fig_2]])
+            grid = np.full((len(peaklist_chunk), 2), None)
+            for i in range(len(peaklist_chunk)):
+                PeakTable_chunk = PeakTable[PeakTable["Name"].isin(peaklist_chunk[i])]
+
+                grid[0,i] = scatterCI(mid_coef_chunk[i], ci=ci_coef_chunk[i], label=peaklabel_chunk[i], hoverlabel=PeakTable_chunk[["Idx", "Name", "Label"]], hline=0, col_hline=True, title=name_coef, sort_abs=sort, sort_ci=sort_ci, grid_line=grid_line, x_axis_below=x_axis_below)
+
+                if name_vip == "Variable Importance in Projection (VIP) Plot":
+                    grid[1,i] = scatterCI(mid_vip_chunk[i], ci=ci_vip_chunk[i], label=peaklabel_chunk[i], hoverlabel=PeakTable_chunk[["Idx", "Name", "Label"]], hline=1, col_hline=False, title=name_vip, sort_abs=sort, sort_ci=sort_ci, sort_ci_abs=True, grid_line=grid_line, x_axis_below=x_axis_below)
+                else:
+                    grid[1,i] = scatterCI(mid_vip_chunk[i], ci=ci_vip_chunk[i], label=peaklabel_chunk[i], hoverlabel=PeakTable_chunk[["Idx", "Name", "Label"]], hline=np.average(self.stat['model.vip_']), col_hline=False, title=name_vip, sort_abs=sort, sort_ci_abs=True, grid_line=grid_line, x_axis_below=x_axis_below)
+            fig = gridplot(grid.tolist())
+        else:
+            # Plot
+            fig_1 = scatterCI(mid_coef, ci=ci_coef, label=peaklabel, hoverlabel=PeakTable[["Idx", "Name", "Label"]], hline=0, col_hline=True, title=name_coef, sort_abs=sort, sort_ci=sort_ci, grid_line=grid_line, x_axis_below=x_axis_below)
+            if name_vip == "Variable Importance in Projection (VIP) Plot":
+                fig_2 = scatterCI(mid_vip, ci=ci_vip, label=peaklabel, hoverlabel=PeakTable[["Idx", "Name", "Label"]], hline=1, col_hline=False, title=name_vip, sort_abs=sort, sort_ci=sort_ci, sort_ci_abs=True, grid_line=grid_line, x_axis_below=x_axis_below)
+            else:
+                fig_2 = scatterCI(mid_vip, ci=ci_vip, label=peaklabel, hoverlabel=PeakTable[["Idx", "Name", "Label"]], hline=np.average(self.stat['model.vip_']), col_hline=False, title=name_vip, sort_abs=sort, sort_ci_abs=True, grid_line=grid_line, x_axis_below=x_axis_below)
+
+            ######
+            fig = layout([[fig_1], [fig_2]])
         output_notebook()
         show(fig)
 
