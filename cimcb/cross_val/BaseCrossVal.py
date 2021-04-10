@@ -215,118 +215,121 @@ class BaseCrossVal(ABC):
         x_scores_cv = x_scores_cv[:, order]
         pctvar_ = pctvar_[order]
 
-        # If there is only 1 x_score, Need to plot x_score vs. peak (as opposided to x_score[i] vs. x_score[j])
-        if num_x_scores == 1:
-            pass
+        # If there is only 1 component, Need to plot x_score vs. peak (as opposided to x_score[i] vs. x_score[j])
+        if len(components) == 1:
+            print('Components must be > 1 to plot projections')
         else:
-            # Width/height of each scoreplot
-            width_height = int(950 / len(components))
-            circle_size_scoreplot = size / len(components)
-            label_font = str(13 - len(components)) + "pt"
-            title_font = str(13 - len(components)) + "pt"
+            if num_x_scores == 1:
+                pass
+            else:
+                # Width/height of each scoreplot
+                width_height = int(950 / len(components))
+                circle_size_scoreplot = size / len(components)
+                label_font = str(13 - len(components)) + "pt"
+                title_font = str(13 - len(components)) + "pt"
 
-            # Create empty grid
-            grid = np.full((num_x_scores, num_x_scores), None)
-            # Append each scoreplot
-            for i in range(len(comb_x_scores)):
-                # Make a copy (as it overwrites the input label/group)
-                if label is None:
+                # Create empty grid
+                grid = np.full((num_x_scores, num_x_scores), None)
+                # Append each scoreplot
+                for i in range(len(comb_x_scores)):
+                    # Make a copy (as it overwrites the input label/group)
+                    if label is None:
+                        group_copy = self.Y.copy()
+                        label_copy = pd.Series(self.Y, name='Class').apply(str)
+                    else:
+                        newlabel = np.array(label)
+                        label_copy = deepcopy(label)
+                        #group_copy = deepcopy(newlabel)
+                        group_copy = self.Y.copy()
+
+                    # Scatterplot
+                    x, y = comb_x_scores[i]
+                    xlabel = "{} {} ({:0.1f}%)".format(lv_name, x + 1, pctvar_[x])
+                    ylabel = "{} {} ({:0.1f}%)".format(lv_name, y + 1, pctvar_[y])
+                    gradient = y_loadings_[y] / y_loadings_[x]
+
+                    x_full = x_scores_full[:, x].tolist()
+                    y_full = x_scores_full[:, y].tolist()
+                    x_cv = x_scores_cv[:, x].tolist()
+                    y_cv = x_scores_cv[:, y].tolist()
+                    x_orig = x_scores_full[:, x].tolist()
+                    y_orig = x_scores_full[:, y].tolist()
+
+                    max_range = max(np.max(np.abs(x_scores_full[:, x])), np.max(np.abs(x_scores_cv[:, y])))
+                    new_range_min = -max_range - 0.05 * max_range
+                    new_range_max = max_range + 0.05 * max_range
+                    new_range = (new_range_min, new_range_max)
+                    new_xrange = new_range
+                    new_yrange = new_range
+
+                    regY_full = self.Y
+                    regX_full = np.array([x_full, y_full]).T
+                    reg_stat = LinearRegression().fit(regX_full, regY_full)
+                    #gradient = reg_stat.coef_[1] / reg_stat.coef_[0]
+                    grid[y, x] = scatter_ellipse(x_orig, y_orig, x_cv, y_cv, label=label_copy, group=group_copy, title="", xlabel=xlabel, ylabel=ylabel, width=width_height, height=width_height, legend=legend_scatter, size=circle_size_scoreplot, label_font_size=label_font, hover_xy=False, xrange=new_xrange, yrange=new_yrange, gradient=gradient, ci95=True, scatterplot=scatterplot, extraci95_x=x_cv, extraci95_y=y_cv, extraci95=True, scattershow=plot_num, extraci95_x2=x_full, extraci95_y2=y_full, orthog_line=orthog_line, grid_line=grid_line, legend_title=True, font_size=label_font)
+
+                # Append each distribution curve
+                group_dist = np.concatenate((self.Y, (self.Y + 2)))
+                dist_label1 = np.array(label_copy[self.Y==0])[0]
+                dist_label2 = np.array(label_copy[self.Y==1])[0]
+                dist_label = [str(dist_label1), str(dist_label2)]
+
+                for i in components:
+                    i = i - 1
+                    score_dist = np.concatenate((x_scores_full[:, i], x_scores_cv[:, i]))
+                    xlabel = "{} {} ({:0.1f}%)".format(lv_name, i + 1, pctvar_[i])
+                    grid[i, i] = distribution(score_dist, group=group_dist, group_label=dist_label, kde=True, title="", xlabel=xlabel, ylabel="p.d.f.", width=width_height, height=width_height, label_font_size=label_font, sigmoid=sigmoid, legend=legend_dist, plot_num=plot_num, grid_line=grid_line, legend_title=True, font_size=label_font)
+
+                # Append each roc curve
+                for i in range(len(comb_x_scores)):
+                    x, y = comb_x_scores[i]
+                    idx_x = order[x]
+                    idx_y = order[y]
+
+                    # Get the optimal combination of x_scores based on rotation of y_loadings_
+                    # theta = math.atan(1)
+
+                    x_stat = x_scores_full[:, x]
+                    y_stat = x_scores_full[:, y]
+                    regY_stat = self.Y
+                    regX_stat = np.array([x_stat, y_stat]).T
+                    reg_stat = LinearRegression().fit(regX_stat, regY_stat)
+                    grad_stat = reg_stat.coef_[1] / reg_stat.coef_[0]
+                    theta = math.atan(grad_stat)
+                    #ypred_stat = x_stat * math.cos(theta_stat) + y_stat * math.sin(theta_stat)  # Optimal line
+                    x_rotate = x_scores_full[:, x] * math.cos(theta) + x_scores_full[:, y] * math.sin(theta)
+                    #x_rotate_boot = x_scores_cv[:, x] * math.cos(theta) + x_scores_cv[:, y] * math.sin(theta)
+
+                    # gradient = y_loadings_[y] / y_loadings_[x]
+                    # theta = math.atan(gradient)
+                    # x_rotate = x_scores_full[:, x] * math.cos(theta) + x_scores_full[:, y] * math.sin(theta)
+                    # x_rotate_boot = x_scores_cv[:, x] * math.cos(theta) + x_scores_cv[:, y] * math.sin(theta)
+
+                    self.x_rotate = x_rotate
                     group_copy = self.Y.copy()
-                    label_copy = pd.Series(self.Y, name='Class').apply(str)
-                else:
-                    newlabel = np.array(label)
-                    label_copy = deepcopy(label)
-                    #group_copy = deepcopy(newlabel)
-                    group_copy = self.Y.copy()
+                    self.x_rotate_boot = []
+                    for i in range(len(x_scores_cvall)):
+                        x_rot = x_scores_cvall[i][:, idx_x] * math.cos(theta) + x_scores_cvall[i][:, idx_y] * math.sin(theta)
+                        self.x_rotate_boot.append(x_rot)
+                    self.x_rotate_boot = np.array(self.x_rotate_boot)
+                    x_rotate_boot = self.x_rotate_boot
 
-                # Scatterplot
-                x, y = comb_x_scores[i]
-                xlabel = "{} {} ({:0.1f}%)".format(lv_name, x + 1, pctvar_[x])
-                ylabel = "{} {} ({:0.1f}%)".format(lv_name, y + 1, pctvar_[y])
-                gradient = y_loadings_[y] / y_loadings_[x]
-
-                x_full = x_scores_full[:, x].tolist()
-                y_full = x_scores_full[:, y].tolist()
-                x_cv = x_scores_cv[:, x].tolist()
-                y_cv = x_scores_cv[:, y].tolist()
-                x_orig = x_scores_full[:, x].tolist()
-                y_orig = x_scores_full[:, y].tolist()
-
-                max_range = max(np.max(np.abs(x_scores_full[:, x])), np.max(np.abs(x_scores_cv[:, y])))
-                new_range_min = -max_range - 0.05 * max_range
-                new_range_max = max_range + 0.05 * max_range
-                new_range = (new_range_min, new_range_max)
-                new_xrange = new_range
-                new_yrange = new_range
-
-                regY_full = self.Y
-                regX_full = np.array([x_full, y_full]).T
-                reg_stat = LinearRegression().fit(regX_full, regY_full)
-                #gradient = reg_stat.coef_[1] / reg_stat.coef_[0]
-                grid[y, x] = scatter_ellipse(x_orig, y_orig, x_cv, y_cv, label=label_copy, group=group_copy, title="", xlabel=xlabel, ylabel=ylabel, width=width_height, height=width_height, legend=legend_scatter, size=circle_size_scoreplot, label_font_size=label_font, hover_xy=False, xrange=new_xrange, yrange=new_yrange, gradient=gradient, ci95=True, scatterplot=scatterplot, extraci95_x=x_cv, extraci95_y=y_cv, extraci95=True, scattershow=plot_num, extraci95_x2=x_full, extraci95_y2=y_full, orthog_line=orthog_line, grid_line=grid_line, legend_title=True, font_size=label_font)
-
-            # Append each distribution curve
-            group_dist = np.concatenate((self.Y, (self.Y + 2)))
-            dist_label1 = np.array(label_copy[self.Y==0])[0]
-            dist_label2 = np.array(label_copy[self.Y==1])[0]
-            dist_label = [str(dist_label1), str(dist_label2)]
-
-            for i in components:
-                i = i - 1
-                score_dist = np.concatenate((x_scores_full[:, i], x_scores_cv[:, i]))
-                xlabel = "{} {} ({:0.1f}%)".format(lv_name, i + 1, pctvar_[i])
-                grid[i, i] = distribution(score_dist, group=group_dist, group_label=dist_label, kde=True, title="", xlabel=xlabel, ylabel="p.d.f.", width=width_height, height=width_height, label_font_size=label_font, sigmoid=sigmoid, legend=legend_dist, plot_num=plot_num, grid_line=grid_line, legend_title=True, font_size=label_font)
-
-            # Append each roc curve
-            for i in range(len(comb_x_scores)):
-                x, y = comb_x_scores[i]
-                idx_x = order[x]
-                idx_y = order[y]
-
-                # Get the optimal combination of x_scores based on rotation of y_loadings_
-                # theta = math.atan(1)
-
-                x_stat = x_scores_full[:, x]
-                y_stat = x_scores_full[:, y]
-                regY_stat = self.Y
-                regX_stat = np.array([x_stat, y_stat]).T
-                reg_stat = LinearRegression().fit(regX_stat, regY_stat)
-                grad_stat = reg_stat.coef_[1] / reg_stat.coef_[0]
-                theta = math.atan(grad_stat)
-                #ypred_stat = x_stat * math.cos(theta_stat) + y_stat * math.sin(theta_stat)  # Optimal line
-                x_rotate = x_scores_full[:, x] * math.cos(theta) + x_scores_full[:, y] * math.sin(theta)
-                #x_rotate_boot = x_scores_cv[:, x] * math.cos(theta) + x_scores_cv[:, y] * math.sin(theta)
-
-                # gradient = y_loadings_[y] / y_loadings_[x]
-                # theta = math.atan(gradient)
-                # x_rotate = x_scores_full[:, x] * math.cos(theta) + x_scores_full[:, y] * math.sin(theta)
-                # x_rotate_boot = x_scores_cv[:, x] * math.cos(theta) + x_scores_cv[:, y] * math.sin(theta)
-
-                self.x_rotate = x_rotate
-                group_copy = self.Y.copy()
-                self.x_rotate_boot = []
-                for i in range(len(x_scores_cvall)):
-                    x_rot = x_scores_cvall[i][:, idx_x] * math.cos(theta) + x_scores_cvall[i][:, idx_y] * math.sin(theta)
-                    self.x_rotate_boot.append(x_rot)
-                self.x_rotate_boot = np.array(self.x_rotate_boot)
-                x_rotate_boot = self.x_rotate_boot
-
-                # Get Stat
+                    # Get Stat
 
 
-                # ROC Plot with x_rotate
-                # fpr, tpr, tpr_ci = roc_calculate(group_copy, x_rotate, bootnum=100)
-                # fpr_boot, tpr_boot, tpr_ci_boot = roc_calculate(group_copy, x_rotate_boot, bootnum=100)
+                    # ROC Plot with x_rotate
+                    # fpr, tpr, tpr_ci = roc_calculate(group_copy, x_rotate, bootnum=100)
+                    # fpr_boot, tpr_boot, tpr_ci_boot = roc_calculate(group_copy, x_rotate_boot, bootnum=100)
 
-                # grid[x, y] = roc_plot(fpr, tpr, tpr_ci, width=width_height, height=width_height, xlabel="1-Specificity (LV{}/LV{})".format(x + 1, y + 1), ylabel="Sensitivity (LV{}/LV{})".format(x + 1, y + 1), legend=False, label_font_size=label_font, roc2=True, fpr2=fpr_boot, tpr2=tpr_boot, tpr_ci2=tpr_ci_boot)
+                    # grid[x, y] = roc_plot(fpr, tpr, tpr_ci, width=width_height, height=width_height, xlabel="1-Specificity (LV{}/LV{})".format(x + 1, y + 1), ylabel="Sensitivity (LV{}/LV{})".format(x + 1, y + 1), legend=False, label_font_size=label_font, roc2=True, fpr2=fpr_boot, tpr2=tpr_boot, tpr_ci2=tpr_ci_boot)
 
-                grid[x, y] = roc_cv(x_rotate, x_rotate_boot, group_copy, width=width_height, height=width_height, xlabel="1-Specificity ({}{}/{}{})".format(lv_name, x + 1, lv_name, y + 1), ylabel="Sensitivity ({}{}/{}{})".format(lv_name, x + 1, lv_name, y + 1), legend=legend_roc, label_font_size=label_font, title_font_size=title_font, show_title=roc_title, plot_num=plot_num, grid_line=grid_line)
+                    grid[x, y] = roc_cv(x_rotate, x_rotate_boot, group_copy, width=width_height, height=width_height, xlabel="1-Specificity ({}{}/{}{})".format(lv_name, x + 1, lv_name, y + 1), ylabel="Sensitivity ({}{}/{}{})".format(lv_name, x + 1, lv_name, y + 1), legend=legend_roc, label_font_size=label_font, title_font_size=title_font, show_title=roc_title, plot_num=plot_num, grid_line=grid_line)
 
-            # Bokeh grid
-            fig = gridplot(grid.tolist())
+                # Bokeh grid
+                fig = gridplot(grid.tolist())
 
-        output_notebook()
-        show(fig)
+            output_notebook()
+            show(fig)
 
     def plot(self, metric="r2q2", scale=1, color_scaling="tanh", rotate_xlabel=True, model="kfold", legend=True, color_beta=[10, 10, 10], ci=95, diff1_heat=True, style=1, method='absolute', alt=True, grid_line=False):
         """Create a full/cv plot using based on metric selected.
