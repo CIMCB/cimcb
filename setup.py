@@ -8,7 +8,7 @@ def readme():
 
 setup(
     name="cimcb",
-    version="2.1.1",
+    version="2.1.2",
     description="A package containing the necessary tools for the statistical analysis of untargeted and targeted metabolomics data.",
     long_description=readme(),
     long_description_content_type='text/markdown',
