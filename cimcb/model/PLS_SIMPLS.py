@@ -91,7 +91,8 @@ class PLS_SIMPLS(BaseModel):
         sumSq = np.sum(Xscores ** 2, axis=0) * np.sum(Yloadings ** 2, axis=0)
         self.model.vip_ = np.sqrt(len(Xloadings) * np.sum(sumSq * W0 ** 2, axis=1) / np.sum(sumSq, axis=0))
 
-        self.x_loadings_ = Xloadings
+        self.x_weights_ = Weights
+        self.x_loadings_ = Weights
         self.feature_importance_ = np.array([self.model.coef_, self.model.vip_]).T
         # Calculate and return Y predicted value
         newX = np.insert(X, 0, np.ones(len(X)), axis=1)

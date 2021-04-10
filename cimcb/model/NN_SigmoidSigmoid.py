@@ -166,6 +166,7 @@ class NN_SigmoidSigmoid(BaseModel):
             self.model.eval_metrics_.append(value)
             self.metrics_key.append(key)
 
+        self.x_weights_ = self.model.x_loadings_
         self.x_loadings_ = self.model.x_loadings_
         self.feature_importance_ = np.array([self.model.coef_, self.model.vip_]).T
 
