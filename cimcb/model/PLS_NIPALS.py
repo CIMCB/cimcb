@@ -19,7 +19,8 @@ import math
 from scipy.stats import logistic
 from itertools import combinations
 from copy import deepcopy, copy
-from bokeh.layouts import widgetbox, gridplot, column, row, layout
+from bokeh.layouts import gridplot, column, row, layout
+from bokeh.models.widgets import DataTable, TableColumn
 from bokeh.models import HoverTool, Band
 from bokeh.models.widgets import DataTable, Div, TableColumn
 from bokeh.models.annotations import Title
