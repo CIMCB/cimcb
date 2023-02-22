@@ -10,7 +10,8 @@ from scipy.stats import logistic
 from itertools import combinations
 from copy import deepcopy, copy
 from sklearn.model_selection import StratifiedKFold
-from bokeh.layouts import widgetbox, gridplot, column, row, layout
+from bokeh.layouts import gridplot, column, row, layout
+from bokeh.models.widgets import DataTable, TableColumn
 from bokeh.models import HoverTool, Band
 from bokeh.models.widgets import DataTable, Div, TableColumn
 from bokeh.models.annotations import Title
@@ -401,9 +402,11 @@ class BaseModel(ABC):
 
             source = ColumnDataSource(data=tabledata)
             if self.test is not None:
-                table_bokeh = widgetbox(DataTable(source=source, columns=columns, width=950, height=90), width=950, height=95)
+                table_bokeh = DataTable(source=source, columns=columns, width=950, height=90)
+                layout = column(table_bokeh, sizing_mode='scale_width')
             else:
-                table_bokeh = widgetbox(DataTable(source=source, columns=columns, width=950, height=90), width=950, height=95)
+                table_bokeh = DataTable(source=source, columns=columns, width=950, height=90)
+                layout = column(table_bokeh, sizing_mode='scale_width')
 
             fig1 = gridplot([[violin_bokeh, dist_bokeh, roc_bokeh]])
             fig = layout(fig1, [table_bokeh])
@@ -592,10 +595,14 @@ class BaseModel(ABC):
         source = ColumnDataSource(data=tabledata)
         if errorbar is True:
             columns = [TableColumn(field="evaluate", title="Evaluate"), TableColumn(field="manw_pval", title="ManW P-Value"), TableColumn(field="R2", title="R2"), TableColumn(field="auc", title="AUC"), TableColumn(field="accuracy", title="Accuracy"), TableColumn(field="precision", title="Precision"), TableColumn(field="F1score", title="F1score"), TableColumn(field="sensitivity", title="Sensitivity"), TableColumn(field="specificity", title="Specificity")]
-            table_bokeh = widgetbox(DataTable(source=source, columns=columns, width=950, height=90), width=950, height=80)
+            table_bokeh = DataTable(source=source, columns=columns, width=950, height=90)
+            layout = column(table_bokeh, sizing_mode='scale_width')
+            
+            
         else:
             columns = [TableColumn(field="evaluate", title="Evaluate"), TableColumn(field="manw_pval", title="ManW P-Value"), TableColumn(field="R2", title="R2"), TableColumn(field="auc", title="AUC")]
-            table_bokeh = widgetbox(DataTable(source=source, columns=columns, width=950, height=90), width=950, height=80)
+            table_bokeh = DataTable(source=source, columns=columns, width=950, height=90)
+            layout = column(table_bokeh, sizing_mode='scale_width')
 
         # Title
         if errorbar is False:
