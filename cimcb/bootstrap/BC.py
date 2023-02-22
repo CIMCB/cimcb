@@ -5,7 +5,8 @@ from scipy.stats import norm
 import math
 import multiprocessing
 from copy import deepcopy
-from bokeh.layouts import widgetbox, gridplot, column, row, layout
+from bokeh.layouts import gridplot, column, row, layout
+from bokeh.models.widgets import DataTable, TableColumn
 from bokeh.plotting import ColumnDataSource, figure, output_notebook, show
 from .BaseBootstrap import BaseBootstrap
 from itertools import combinations
